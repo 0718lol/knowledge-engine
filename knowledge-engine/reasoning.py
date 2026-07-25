@@ -1,7 +1,8 @@
-"""Hypothesis verification engine: given a statement, find supporting / contradicting evidence."""
+"""Hypothesis verification engine: delegates to evidence analysis for strict results."""
 import re
 from database import connection
 from search import search
+from evidence import analyze as evidence_analyze
 
 
 def _tokenize(text):
@@ -13,86 +14,43 @@ def _tokenize(text):
 
 
 def verify(statement):
-    """Evaluate a hypothesis statement. Returns a verdict dict."""
-    tokens = _tokenize(statement)
-    related = search(statement, top_k=10)
+    """Evaluate a hypothesis statement using the strict evidence analysis engine.
 
-    if not related:
-        result = create_hypothesis(statement, "unknown", 0, [])
+    Returns a verdict dict with evidence levels, counterexamples, and open questions.
+    """
+    analysis = evidence_analyze(statement)
+
+    if not analysis.get("related_concepts"):
+        result = create_hypothesis(statement, "unknown", 0, {})
         return result
 
-    with connection() as conn:
-        # Collect all relations involving the top related concepts
-        ids = tuple(r["id"] for r in related)
-        if len(ids) == 1:
-            ids = (ids[0], ids[0])
-        rels = conn.execute(
-            f"""SELECT r.*, cs.name AS source_name, ct.name AS target_name
-                FROM relations r
-                JOIN concepts cs ON cs.id = r.source_id
-                JOIN concepts ct ON ct.id = r.target_id
-                WHERE r.source_id IN ({','.join('?' * len(ids))})
-                   OR r.target_id IN ({','.join('?' * len(ids))})""",
-            (*ids, *ids)
-        ).fetchall()
+    supports = analysis.get("supports", [])
+    contradicts = analysis.get("contradicts", [])
 
-    supports = []
-    contradicts = []
-    unknown = []
+    support_score = sum(1 for s in supports if s["level"] in ("strong", "moderate"))
+    contradict_score = sum(1 for c in contradicts if c["level"] in ("strong", "moderate"))
 
-    for rel in rels:
-        rel_tokens = _tokenize(f"{rel['source_name']} {rel['target_name']} {rel['relation_type']} {rel['evidence']}")
-        overlap = tokens & rel_tokens
-        if not overlap:
-            continue
-        item = {
-            "source": rel["source_name"],
-            "target": rel["target_name"],
-            "type": rel["relation_type"],
-            "evidence": rel["evidence"],
-            "confidence": rel["confidence"],
-        }
-        if rel["relation_type"] in ("supports", "causes", "is_a", "part_of"):
-            supports.append(item)
-        elif rel["relation_type"] in ("contradicts",):
-            contradicts.append(item)
-        else:
-            unknown.append(item)
-
-    # Also add related concepts' descriptions as supporting context
-    for r in related:
-        desc_tokens = _tokenize(r["description"])
-        if tokens & desc_tokens:
-            supports.append({
-                "source": r["name"],
-                "target": statement,
-                "type": "related",
-                "evidence": r["description"][:200],
-                "confidence": r.get("score", 0.5),
-            })
-
-    # Determine verdict
-    support_score = sum(s["confidence"] for s in supports)
-    contradict_score = sum(c["confidence"] for c in contradicts)
-
-    if support_score > contradict_score * 1.5:
-        result = "supports"
-        confidence = min(1.0, support_score / (support_score + contradict_score + 0.1))
-    elif contradict_score > support_score * 1.5:
-        result = "contradicts"
-        confidence = min(1.0, contradict_score / (support_score + contradict_score + 0.1))
+    if support_score > contradict_score:
+        status = "supports"
+        confidence = support_score / max(support_score + contradict_score, 1)
+    elif contradict_score > support_score:
+        status = "contradicts"
+        confidence = contradict_score / max(support_score + contradict_score, 1)
     else:
-        result = "inconclusive"
+        status = "inconclusive"
         confidence = 0.5
 
     evidence_summary = {
         "supports": supports[:5],
         "contradicts": contradicts[:5],
-        "unknown": unknown[:5],
-        "related_concepts": [r["name"] for r in related[:5]],
+        "counterexamples": analysis.get("counterexamples", [])[:3],
+        "open_questions": analysis.get("open_questions", [])[:5],
+        "related_concepts": analysis.get("related_concepts", []),
+        "related_papers": analysis.get("related_papers", [])[:5],
+        "overall_level": analysis.get("overall_level", "none"),
     }
 
-    return create_hypothesis(statement, result, round(confidence, 3), evidence_summary)
+    return create_hypothesis(statement, status, round(confidence, 3), evidence_summary)
 
 
 def create_hypothesis(statement, result, confidence, evidence_summary):

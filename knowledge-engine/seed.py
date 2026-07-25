@@ -83,6 +83,19 @@ EVIDENCES = [
     ("区块链", "2008 年中本聪发表比特币白皮书，区块链技术首次应用", "百科", "比特币白皮书"),
 ]
 
+SEED_PAPERS = [
+    ("Deep Residual Learning for Image Recognition", ["He, Kaiming", "Zhang, Xiangyu", "Ren, Shaoqing", "Sun, Jian"], "CVPR", 2016, "10.1109/CVPR.2016.90", "", "深度学习"),
+    ("Attention Is All You Need", ["Vaswani, Ashish", "Shazeer, Noam", "Parmar, Niki", "Uszkoreit, Jakob"], "NeurIPS", 2017, "10.5555/3295222.3295349", "", "自然语言处理"),
+    ("Playing Atari with Deep Reinforcement Learning", ["Mnih, Volodymyr", "Kavukcuoglu, Koray", "Silver, David", "Graves, Alex"], "arXiv", 2013, "", "1312.5602", "强化学习"),
+    ("ImageNet Classification with Deep Convolutional Neural Networks", ["Krizhevsky, Alex", "Sutskever, Ilya", "Hinton, Geoffrey E."], "NeurIPS", 2012, "10.1145/3065386", "", "机器学习"),
+    ("A Mathematical Theory of Communication", ["Shannon, Claude E."], "Bell System Technical Journal", 1948, "10.1002/j.1538-7305.1948.tb01338.x", "", "概率论"),
+    ("On the Origin of Species by Means of Natural Selection", ["Darwin, Charles"], "John Murray", 1859, "", "", "进化论"),
+    ("First M87 Event Horizon Telescope Results", ["Event Horizon Telescope Collaboration"], "ApJL", 2019, "10.3847/2041-8213/ab0ec7", "", "黑洞"),
+    ("Planck 2018 Results: Overview and Cosmological Legacy", ["Planck Collaboration"], "Astronomy & Astrophysics", 2020, "10.1051/0004-6361/201833910", "", "大爆炸理论"),
+    ("Bitcoin: A Peer-to-Peer Electronic Cash System", ["Nakamoto, Satoshi"], "White Paper", 2008, "", "", "区块链"),
+    ("Molecular Structure of Nucleic Acids", ["Watson, James D.", "Crick, Francis H. C."], "Nature", 1953, "10.1038/171737a0", "", "DNA"),
+]
+
 
 def seed():
     init_db()
@@ -109,7 +122,14 @@ def seed():
             create_evidence(concept_map[cname], content, source_url, source_title)
             print(f"  + Evidence: {cname}")
 
-    print(f"\n✓ Seeded {len(CONCEPTS)} concepts, {len(RELATIONS)} relations, {len(EVIDENCES)} evidences.")
+    from papers import create_paper, link_paper_to_concept
+    for title, authors, venue, year, doi, arxiv_id, concept_name in SEED_PAPERS:
+        paper = create_paper(title, authors, venue, year, doi, arxiv_id)
+        if concept_name in concept_map:
+            link_paper_to_concept(paper["id"], concept_map[concept_name], "primary")
+            print(f"  + Paper: {title} → {concept_name}")
+
+    print(f"\n✓ Seeded {len(CONCEPTS)} concepts, {len(RELATIONS)} relations, {len(EVIDENCES)} evidences, {len(SEED_PAPERS)} papers.")
 
 
 if __name__ == "__main__":

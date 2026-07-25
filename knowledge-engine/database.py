@@ -79,6 +79,60 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
             CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
             CREATE INDEX IF NOT EXISTS idx_evidence_concept ON evidence(concept_id);
+            CREATE TABLE IF NOT EXISTS papers (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                authors TEXT NOT NULL DEFAULT '[]',
+                venue TEXT NOT NULL DEFAULT '',
+                year INTEGER,
+                doi TEXT NOT NULL DEFAULT '',
+                arxiv_id TEXT NOT NULL DEFAULT '',
+                abstract TEXT NOT NULL DEFAULT '',
+                bibtex TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                added_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_doi ON papers(doi) WHERE doi != '';
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_papers_arxiv_id ON papers(arxiv_id) WHERE arxiv_id != '';
+            CREATE INDEX IF NOT EXISTS idx_papers_title ON papers(title);
+            CREATE TABLE IF NOT EXISTS paper_concepts (
+                paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+                relevance TEXT NOT NULL DEFAULT 'related',
+                PRIMARY KEY (paper_id, concept_id)
+            );
+            CREATE TABLE IF NOT EXISTS paper_citations (
+                id TEXT PRIMARY KEY,
+                citing_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                cited_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                context TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(citing_id, cited_id)
+            );
+            CREATE TABLE IF NOT EXISTS paper_chunks (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                UNIQUE(paper_id, chunk_index)
+            );
+            CREATE TABLE IF NOT EXISTS research_paths (
+                id TEXT PRIMARY KEY,
+                hypothesis_id TEXT REFERENCES hypotheses(id) ON DELETE SET NULL,
+                path_label TEXT NOT NULL,
+                description TEXT NOT NULL,
+                concepts TEXT NOT NULL DEFAULT '[]',
+                papers TEXT NOT NULL DEFAULT '[]',
+                is_selected INTEGER NOT NULL DEFAULT 0,
+                decision_note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_paper_concepts_concept ON paper_concepts(concept_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_citing ON paper_citations(citing_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_cited ON paper_citations(cited_id);
+            CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper ON paper_chunks(paper_id);
+            CREATE INDEX IF NOT EXISTS idx_paths_hypothesis ON research_paths(hypothesis_id);
             """
         )
 
@@ -87,7 +141,7 @@ def row_dict(row):
     if row is None:
         return None
     item = dict(row)
-    for key in ("tags", "evidence_summary"):
+    for key in ("tags", "evidence_summary", "authors", "concepts", "papers"):
         if key in item:
             try:
                 item[key] = json.loads(item[key])

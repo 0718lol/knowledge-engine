@@ -56,11 +56,19 @@
     <section class="discovery-grid">
       <div class="hypothesis-card">
         <div class="panel-heading"><div><p class="eyebrow">DISCOVERY LAB</p><h2>验证一个假设</h2></div><span class="spark">✦</span></div>
-        <p class="muted">提出一个你正在思考的判断，Atlas 会根据当前知识网络寻找支持、反对或未知的证据。</p>
-        <form id="hypothesis-form"><textarea id="hypothesis-input" placeholder="例如：深度学习的发展会加速科学发现？" required></textarea><button class="primary-btn" type="submit">开始验证 <span>→</span></button></form>
+        <p class="muted">提出一个你正在思考的判断，Atlas 会根据当前知识网络寻找支持、反对、反例和开放问题。</p>
+        <form id="hypothesis-form"><textarea id="hypothesis-input" placeholder="例如：深度学习的发展会加速科学发现？" required></textarea><div class="form-actions"><button class="primary-btn" type="submit">开始严格分析 <span>→</span></button><button class="ghost-btn" type="button" id="path-btn">生成研究路径</button></div></form>
         <div id="hypothesis-result" class="hidden"></div>
+        <div id="paths-result" class="hidden"></div>
       </div>
       <div class="history-card"><div class="panel-heading"><div><p class="eyebrow">RECENT THINKING</p><h2>最近的假设</h2></div></div><div id="hypothesis-history" class="history-list"><div class="loading">暂无记录</div></div></div>
+    </section>
+
+    <section class="paper-lab">
+      <div class="paper-lab-head"><div><p class="eyebrow">LITERATURE LAYER</p><h2>论文与真实证据</h2><p class="muted">把论文作为知识网络的可追溯证据层。支持 BibTeX 导入、本地全文检索和 arXiv 探索。</p></div><div class="paper-actions"><button class="ghost-btn" id="arxiv-btn">搜索 arXiv</button><button class="primary-btn" id="bibtex-btn">导入 BibTeX <span>＋</span></button></div></div>
+      <div class="paper-search"><span>⌕</span><input id="paper-search-input" type="search" placeholder="搜索已收藏的论文…"></div>
+      <div id="paper-list" class="paper-list"><div class="loading">正在加载论文…</div></div>
+      <div id="arxiv-results" class="arxiv-results hidden"></div>
     </section>
   </main>
 
@@ -72,6 +80,21 @@
       <div class="form-row"><label>领域<input name="category" placeholder="例如：生物学"></label><label>标签<input name="tags" placeholder="AI, 未来, 科学"></label></div>
       <label>来源（可选）<input name="source" placeholder="书籍、论文或链接"></label>
       <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" value="default" type="submit">保存概念</button></div>
+    </form>
+  </dialog>
+  <dialog id="bibtex-dialog">
+    <form method="dialog" id="bibtex-form">
+      <div class="dialog-head"><div><p class="eyebrow">IMPORT BIBTEX</p><h2>导入论文引用</h2></div><button class="icon-btn" value="cancel">×</button></div>
+      <label>BibTeX 内容<textarea name="bibtex" required placeholder="@article{...}"></textarea></label>
+      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" value="default" type="submit">导入</button></div>
+    </form>
+  </dialog>
+  <dialog id="arxiv-dialog">
+    <form method="dialog" id="arxiv-form">
+      <div class="dialog-head"><div><p class="eyebrow">SEARCH ARXIV</p><h2>搜索 arXiv 论文</h2></div><button class="icon-btn" value="cancel">×</button></div>
+      <label>关键词<input name="query" required placeholder="例如：machine learning"></label>
+      <div id="arxiv-preview" class="arxiv-preview hidden"></div>
+      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" type="submit">搜索</button></div>
     </form>
   </dialog>
   <div id="toast" class="toast"></div>

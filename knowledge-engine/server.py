@@ -11,6 +11,11 @@ import graph
 import knowledge
 import reasoning
 import search
+import papers
+import arxiv
+import evidence
+import paths
+import fulltext
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -129,6 +134,36 @@ class Handler(BaseHTTPRequestHandler):
                 if not concept:
                     return self.send_json({"error": "概念不存在"}, 404)
                 return self.send_json(concept)
+            if path == "/api/papers":
+                q = (query.get("q") or [""])[0].strip()
+                return self.send_json({"items": papers.list_papers(q=q or None), "total": 0})
+            if path == "/api/papers/fulltext":
+                q = (query.get("q") or [""])[0].strip()
+                if q:
+                    return self.send_json({"items": fulltext.search(q), "total": 0})
+                return self.send_json({"items": [], "total": 0})
+            if path.startswith("/api/papers/"):
+                cid = path.rsplit("/", 1)[-1]
+                if path.endswith("/concepts"):
+                    paper_id = path.split("/")[-2]
+                    return self.send_json({"items": papers.get_paper_concepts(paper_id)})
+                if path.endswith("/citations"):
+                    paper_id = path.split("/")[-2]
+                    return self.send_json(papers.get_citations(paper_id))
+                paper = papers.get_paper(cid)
+                if not paper:
+                    return self.send_json({"error": "论文不存在"}, 404)
+                return self.send_json(paper)
+            if path == "/api/arxiv/search":
+                q = (query.get("q") or [""])[0].strip()
+                if not q:
+                    return self.send_json({"items": [], "total": 0})
+                return self.send_json(arxiv.search(q))
+            if path == "/api/paths":
+                hid = (query.get("hypothesis_id") or [None])[0]
+                if hid:
+                    return self.send_json({"items": paths.get_paths_for_hypothesis(hid)})
+                return self.send_json({"items": [], "total": 0})
             return self.send_json({"error": "接口不存在"}, 404)
         except Exception as exc:
             traceback.print_exc()
@@ -167,6 +202,105 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/hypothesis":
                 statement = clean_text(data.get("statement"), "假设内容", max_length=2000)
                 return self.send_json(reasoning.verify(statement), 201)
+            if path == "/api/hypothesis/analyze":
+                statement = clean_text(data.get("statement"), "假设内容", max_length=2000)
+                return self.send_json(evidence.analyze(statement), 201)
+            if path == "/api/hypothesis/paths":
+                statement = clean_text(data.get("statement"), "假设内容", max_length=2000)
+                analysis = evidence.analyze(statement)
+                hypothesis = reasoning.verify(statement)
+                return self.send_json({"paths": paths.generate(analysis, hypothesis.get("id")), "hypothesis_id": hypothesis.get("id"), "analysis": analysis}, 201)
+            if path == "/api/paths/select":
+                path_id = clean_text(data.get("path_id"), "路径ID")
+                note = clean_text(data.get("note", ""), "决策说明", required=False, max_length=1000)
+                result = paths.select_path(path_id, note)
+                if not result:
+                    return self.send_json({"error": "路径不存在"}, 404)
+                return self.send_json(result)
+            if path == "/api/papers":
+                title = clean_text(data.get("title"), "论文标题", max_length=500)
+                authors = data.get("authors") or []
+                if not isinstance(authors, list):
+                    raise ValueError("authors 必须是数组")
+                paper = papers.create_paper(
+                    title, authors,
+                    clean_text(data.get("venue", ""), "发表期刊", False, 200),
+                    data.get("year"),
+                    clean_text(data.get("doi", ""), "DOI", False, 200),
+                    clean_text(data.get("arxiv_id", ""), "arXiv ID", False, 100),
+                    clean_text(data.get("abstract", ""), "摘要", False, 10000),
+                    "",
+                    clean_text(data.get("url", ""), "链接", False, 500),
+                )
+                # Auto-link to concepts
+                conc = knowledge.list_concepts(q=title, limit=5)
+                for c in conc:
+                    papers.link_paper_to_concept(paper["id"], c["id"], "related")
+                return self.send_json(paper, 201)
+            if path == "/api/papers/import-bibtex":
+                bibtext = clean_text(data.get("bibtex"), "BibTeX 内容", max_length=50000)
+                parsed = papers.parse_bibtex(bibtext)
+                if not parsed:
+                    raise ValueError("无法解析 BibTeX 内容")
+                results = []
+                for entry in parsed[:10]:
+                    existing = papers.get_paper_by_doi(entry.get("doi", "")) if entry.get("doi") else None
+                    if not existing and entry.get("arxiv_id"):
+                        existing = papers.get_paper_by_arxiv(entry["arxiv_id"])
+                    if existing:
+                        results.append(existing)
+                        continue
+                    paper = papers.create_paper(
+                        entry.get("title", ""), entry.get("authors", []),
+                        entry.get("venue", ""), entry.get("year"),
+                        entry.get("doi", ""), entry.get("arxiv_id", ""),
+                        entry.get("abstract", ""), bibtext[:2000],
+                        entry.get("url", ""),
+                    )
+                    conc = knowledge.list_concepts(q=paper["title"], limit=3)
+                    for c in conc:
+                        papers.link_paper_to_concept(paper["id"], c["id"], "related")
+                    results.append(paper)
+                return self.send_json({"items": results, "total": len(results)}, 201)
+            if path == "/api/papers/import-doi":
+                doi = clean_text(data.get("doi"), "DOI", max_length=200)
+                existing = papers.get_paper_by_doi(doi)
+                if existing:
+                    return self.send_json(existing)
+                meta = papers.resolve_doi(doi)
+                if meta.get("error"):
+                    raise ValueError(f"无法解析 DOI: {meta['error']}")
+                paper = papers.create_paper(
+                    meta.get("title", ""), meta.get("authors", []),
+                    meta.get("venue", ""), meta.get("year"),
+                    doi, "",
+                    meta.get("abstract", ""), "", meta.get("url", ""),
+                )
+                conc = knowledge.list_concepts(q=paper["title"], limit=3)
+                for c in conc:
+                    papers.link_paper_to_concept(paper["id"], c["id"], "related")
+                return self.send_json(paper, 201)
+            if path == "/api/arxiv/import":
+                arxiv_id = clean_text(data.get("arxiv_id"), "arXiv ID", max_length=50)
+                existing = papers.get_paper_by_arxiv(arxiv_id)
+                if existing:
+                    return self.send_json(existing)
+                entry = arxiv.fetch_by_id(arxiv_id)
+                if not entry:
+                    raise ValueError("arXiv 论文未找到")
+                paper = papers.create_paper(
+                    entry.get("title", ""), entry.get("authors", []),
+                    entry.get("venue", ""), entry.get("year"),
+                    entry.get("doi", ""), arxiv_id,
+                    entry.get("abstract", ""), "", entry.get("url", ""),
+                )
+                conc = knowledge.list_concepts(q=paper["title"], limit=3)
+                for c in conc:
+                    papers.link_paper_to_concept(paper["id"], c["id"], "related")
+                # Chunk abstract
+                if entry.get("abstract"):
+                    fulltext.chunk_paper(paper["id"], entry["abstract"], 500, 50)
+                return self.send_json(paper, 201)
             return self.send_json({"error": "接口不存在"}, 404)
         except Exception as exc:
             traceback.print_exc()

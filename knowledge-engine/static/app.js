@@ -84,10 +84,13 @@ async function selectConcept(id) {
 }
 
 function renderHypothesisResult(result) {
+  const summary = result.evidence_summary || {};
   const labels = { supports: ['有支持证据', '当前知识网络中找到了一些支持这个假设的线索。'], contradicts: ['存在反对证据', '当前知识网络中发现了与这个假设相冲突的线索。'], inconclusive: ['证据尚不充分', '现有知识网络还不足以得出明确结论。'], unknown: ['尚未建立连接', '知识库里还没有找到与这个假设相关的概念。'] };
   const [title, desc] = labels[result.result] || labels.unknown;
+  const level = summary.overall_level || 'none';
+  const levelLabel = { strong: '强证据', moderate: '中等证据', weak: '弱证据', none: '无直接证据' }[level] || '未知';
   const box = $('#hypothesis-result'); box.className = `hypothesis-result ${result.result}`;
-  box.innerHTML = `<div class="verdict"><span>${result.result === 'supports' ? '↗' : result.result === 'contradicts' ? '↘' : '?'}</span><div><strong>${title}</strong><small>${desc}</small></div><b>${Math.round((result.confidence || 0) * 100)}%</b></div><div class="result-evidence">${(result.evidence_summary?.supports || []).slice(0, 3).map((item) => `<div><i class="positive">+</i><span>${escapeHTML(item.source)} → ${escapeHTML(item.target)}<small>${escapeHTML(item.evidence || '相关关系')}</small></span></div>`).join('')}${(result.evidence_summary?.contradicts || []).slice(0, 3).map((item) => `<div><i class="negative">−</i><span>${escapeHTML(item.source)} → ${escapeHTML(item.target)}<small>${escapeHTML(item.evidence || '矛盾关系')}</small></span></div>`).join('')}</div>`;
+  box.innerHTML = `<div class="verdict"><span>${result.result === 'supports' ? '↗' : result.result === 'contradicts' ? '↘' : '?'}</span><div><strong>${title}</strong><small>${desc}</small></div><b>${Math.round((result.confidence || 0) * 100)}%</b></div><div class="evidence-level"><span>证据强度</span><strong class="level-${level}">${levelLabel}</strong></div><div class="result-evidence">${(summary.supports || []).slice(0, 3).map((item) => `<div><i class="positive">+</i><span>${escapeHTML(item.concept)} · ${escapeHTML(item.relation)} <em class="mini-level ${item.level}">${item.level}</em><small>${escapeHTML(item.evidence || '相关关系')}</small></span></div>`).join('')}${(summary.contradicts || []).slice(0, 3).map((item) => `<div><i class="negative">−</i><span>${escapeHTML(item.concept)} · ${escapeHTML(item.relation)} <em class="mini-level ${item.level}">${item.level}</em><small>${escapeHTML(item.evidence || '矛盾关系')}</small></span></div>`).join('')}</div>${(summary.counterexamples || []).length ? `<div class="analysis-block"><strong>反例与冲突</strong>${summary.counterexamples.map((item) => `<p>↯ ${escapeHTML(item.concept_a)} ${escapeHTML(item.relation)} ${escapeHTML(item.concept_b)}：${escapeHTML(item.evidence)}</p>`).join('')}</div>` : ''}${(summary.open_questions || []).length ? `<div class="analysis-block open"><strong>开放问题</strong>${summary.open_questions.slice(0, 3).map((item) => `<p>？${escapeHTML(item.question)}</p>`).join('')}</div>` : ''}`;
   box.classList.remove('hidden');
 }
 
@@ -117,16 +120,61 @@ async function createConcept(event) {
   catch (error) { showToast(error.message, true); }
 }
 
+function renderPaths(paths) {
+  const box = $('#paths-result');
+  if (!paths.length) { box.innerHTML = '<div class="no-results">当前证据不足以生成研究路径</div>'; box.className = 'paths-result'; return; }
+  box.className = 'paths-result';
+  box.innerHTML = `<div class="paths-head"><strong>选择一条研究路径继续</strong><span>人在环决策</span></div>${paths.map((path) => `<div class="path-card ${path.is_selected ? 'selected' : ''}"><div class="path-card-copy"><strong>${escapeHTML(path.path_label)}</strong><p>${escapeHTML(path.description)}</p><div class="path-tags">${(path.concept_names || []).slice(0, 5).map((name) => `<span>${escapeHTML(name)}</span>`).join('')}</div></div><button class="path-select" data-path-id="${path.id}">${path.is_selected ? '已选择' : '选择路径 →'}</button></div>`).join('')}`;
+  box.querySelectorAll('.path-select').forEach((button) => button.addEventListener('click', async () => {
+    const note = window.prompt('为什么选择这条路径？（可选）', '') || '';
+    try { await api('/api/paths/select', { method: 'POST', body: JSON.stringify({ path_id: button.dataset.pathId, note }) }); showToast('研究路径已记录'); button.textContent = '已选择'; button.closest('.path-card').classList.add('selected'); }
+    catch (error) { showToast(error.message, true); }
+  }));
+}
+
+async function generatePaths() {
+  const statement = $('#hypothesis-input').value.trim();
+  if (!statement) { showToast('请先输入一个假设', true); return; }
+  const button = $('#path-btn'); button.disabled = true; button.textContent = '生成中…';
+  try { const data = await api('/api/hypothesis/paths', { method: 'POST', body: JSON.stringify({ statement }) }); renderPaths(data.paths || []); }
+  catch (error) { showToast(error.message, true); }
+  finally { button.disabled = false; button.textContent = '生成研究路径'; }
+}
+
+async function loadPapers() {
+  const query = $('#paper-search-input').value.trim();
+  try { const data = await api(`/api/papers${query ? `?q=${encodeURIComponent(query)}` : ''}`); const list = $('#paper-list'); if (!data.items.length) { list.innerHTML = '<div class="no-results">还没有收藏论文<br><small>可以导入 BibTeX，或搜索 arXiv</small></div>'; return; } list.innerHTML = data.items.map((paper) => `<article class="paper-card"><div class="paper-year">${paper.year || '—'}</div><div class="paper-copy"><strong>${escapeHTML(paper.title)}</strong><p>${escapeHTML((paper.authors || []).slice(0, 3).join(', '))}${(paper.authors || []).length > 3 ? ' 等' : ''}</p><small>${escapeHTML(paper.venue || '未注明来源')}${paper.doi ? ` · DOI: ${escapeHTML(paper.doi)}` : ''}${paper.arxiv_id ? ` · arXiv: ${escapeHTML(paper.arxiv_id)}` : ''}</small></div><a href="${escapeHTML(paper.url || (paper.doi ? `https://doi.org/${paper.doi}` : '#'))}" target="_blank" class="paper-link">↗</a></article>`).join(''); }
+  catch (error) { showToast(error.message, true); }
+}
+
+async function importBibtex(event) {
+  event.preventDefault(); const form = event.target; const data = Object.fromEntries(new FormData(form));
+  try { const result = await api('/api/papers/import-bibtex', { method: 'POST', body: JSON.stringify(data) }); form.closest('dialog').close(); form.reset(); showToast(`已导入 ${result.total} 篇论文`); await loadPapers(); await loadStats(); }
+  catch (error) { showToast(error.message, true); }
+}
+
+async function searchArxiv(event) {
+  event.preventDefault(); const form = event.target; const query = new FormData(form).get('query'); const preview = $('#arxiv-preview');
+  try { const data = await api(`/api/arxiv/search?q=${encodeURIComponent(query)}`); if (!data.items?.length) { preview.innerHTML = '<div class="no-results">没有找到论文，或网络暂不可用</div>'; } else { preview.className = 'arxiv-preview'; preview.innerHTML = data.items.slice(0, 5).map((item) => `<div class="arxiv-item"><div><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(item.arxiv_id)} · ${escapeHTML(item.authors.slice(0, 2).join(', '))}</small></div><button class="import-arxiv" data-id="${escapeHTML(item.arxiv_id)}">导入</button></div>`).join(''); preview.querySelectorAll('.import-arxiv').forEach((button) => button.addEventListener('click', async () => { try { await api('/api/arxiv/import', { method: 'POST', body: JSON.stringify({ arxiv_id: button.dataset.id }) }); showToast('arXiv 论文已导入'); await loadPapers(); await loadStats(); } catch (error) { showToast(error.message, true); } })); } }
+  catch (error) { preview.innerHTML = `<div class="no-results">网络请求失败：${escapeHTML(error.message)}</div>`; preview.className = 'arxiv-preview'; }
+}
+
 function setup() {
   $('#search-input').addEventListener('input', loadConcepts);
   document.addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'k') { event.preventDefault(); $('#search-input').focus(); } });
   $('#category-filters').addEventListener('click', (event) => { const button = event.target.closest('.filter'); if (!button) return; state.activeCategory = button.dataset.category; document.querySelectorAll('.filter').forEach((item) => item.classList.toggle('active', item === button)); loadConcepts(); });
   $('#hypothesis-form').addEventListener('submit', submitHypothesis);
+  $('#path-btn').addEventListener('click', generatePaths);
   $('#concept-form').addEventListener('submit', createConcept);
   $('#new-concept-btn').addEventListener('click', () => $('#concept-dialog').showModal());
-  $('#refresh-btn').addEventListener('click', () => Promise.all([loadStats(), loadConcepts(), loadHypothesisHistory()]));
+  $('#refresh-btn').addEventListener('click', () => Promise.all([loadStats(), loadConcepts(), loadHypothesisHistory(), loadPapers()]));
   $('#open-global-graph').addEventListener('click', async () => { try { const data = await api('/api/graph'); const win = window.open('', '_blank', 'width=780,height=650'); win.document.write(`<title>Atlas · 全局知识图谱</title><body style="margin:20px;background:#f1f5f9;font-family:sans-serif"><h2>Atlas 全局知识图谱</h2>${data.svg}</body>`); } catch (error) { showToast(error.message, true); } });
-  loadStats(); loadConcepts(); loadHypothesisHistory();
+  $('#bibtex-btn').addEventListener('click', () => $('#bibtex-dialog').showModal());
+  $('#bibtex-form').addEventListener('submit', importBibtex);
+  $('#arxiv-btn').addEventListener('click', () => $('#arxiv-dialog').showModal());
+  $('#arxiv-form').addEventListener('submit', searchArxiv);
+  $('#paper-search-input').addEventListener('input', loadPapers);
+  loadStats(); loadConcepts(); loadHypothesisHistory(); loadPapers();
 }
 
 document.addEventListener('DOMContentLoaded', setup);
