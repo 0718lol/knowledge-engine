@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas · 人类知识与科学发现引擎</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark">A</div>
+    <div class="brand-copy">
+      <strong>ATLAS</strong>
+      <span>人类知识与科学发现引擎</span>
+    </div>
+    <div class="top-actions">
+      <span class="status-dot"></span><span>本地知识库已连接</span>
+      <button class="ghost-btn" id="refresh-btn">刷新</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">OPEN KNOWLEDGE / 01</p>
+        <h1>让知识彼此相遇，<br><em>让发现开始发生。</em></h1>
+        <p class="hero-text">探索概念之间尚未被看见的关系。把碎片化的信息，变成可验证、可连接、可共同编辑的知识网络。</p>
+      </div>
+      <div class="hero-orbit" aria-hidden="true"><span class="orbit-core">∞</span><i></i><i></i><i></i></div>
+    </section>
+
+    <section class="stats-grid" id="stats-grid">
+      <div class="stat-card"><span class="stat-label">概念</span><strong id="stat-concepts">—</strong><small>已收录节点</small></div>
+      <div class="stat-card"><span class="stat-label">关系</span><strong id="stat-relations">—</strong><small>跨领域连接</small></div>
+      <div class="stat-card"><span class="stat-label">证据</span><strong id="stat-evidence">—</strong><small>可追溯来源</small></div>
+      <div class="stat-card accent"><span class="stat-label">假设</span><strong id="stat-hypotheses">—</strong><small>已完成验证</small></div>
+    </section>
+
+    <section class="workspace">
+      <aside class="sidebar">
+        <div class="panel-heading"><div><p class="eyebrow">EXPLORE</p><h2>知识探索</h2></div><button class="icon-btn" id="new-concept-btn" title="添加概念">＋</button></div>
+        <label class="search-box"><span>⌕</span><input id="search-input" type="search" placeholder="搜索概念、领域或描述…"><kbd>⌘ K</kbd></label>
+        <div class="filter-row" id="category-filters"><button class="filter active" data-category="">全部</button><button class="filter" data-category="人工智能">AI</button><button class="filter" data-category="生物学">生物</button><button class="filter" data-category="物理学">物理</button></div>
+        <div class="concept-list" id="concept-list"><div class="loading">正在加载知识节点…</div></div>
+        <button class="wide-btn" id="open-global-graph">查看全局知识图谱 <span>↗</span></button>
+      </aside>
+
+      <section class="content-panel">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">✦</div><p class="eyebrow">SELECT A NODE TO BEGIN</p><h2>选择一个概念<br>开始探索它的宇宙</h2><p>从左侧搜索或选择一个概念。你将看到它的定义、证据，以及和其他领域的连接。</p>
+        </div>
+        <div id="concept-detail" class="hidden"></div>
+      </section>
+    </section>
+
+    <section class="discovery-grid">
+      <div class="hypothesis-card">
+        <div class="panel-heading"><div><p class="eyebrow">DISCOVERY LAB</p><h2>验证一个假设</h2></div><span class="spark">✦</span></div>
+        <p class="muted">提出一个你正在思考的判断，Atlas 会根据当前知识网络寻找支持、反对或未知的证据。</p>
+        <form id="hypothesis-form"><textarea id="hypothesis-input" placeholder="例如：深度学习的发展会加速科学发现？" required></textarea><button class="primary-btn" type="submit">开始验证 <span>→</span></button></form>
+        <div id="hypothesis-result" class="hidden"></div>
+      </div>
+      <div class="history-card"><div class="panel-heading"><div><p class="eyebrow">RECENT THINKING</p><h2>最近的假设</h2></div></div><div id="hypothesis-history" class="history-list"><div class="loading">暂无记录</div></div></div>
+    </section>
+  </main>
+
+  <dialog id="concept-dialog">
+    <form method="dialog" id="concept-form">
+      <div class="dialog-head"><div><p class="eyebrow">ADD TO ATLAS</p><h2>添加一个新概念</h2></div><button class="icon-btn" value="cancel">×</button></div>
+      <label>概念名称<input name="name" required maxlength="100" placeholder="例如：合成生物学"></label>
+      <label>一句话描述<textarea name="description" required maxlength="5000" placeholder="这个概念是什么？它为什么重要？"></textarea></label>
+      <div class="form-row"><label>领域<input name="category" placeholder="例如：生物学"></label><label>标签<input name="tags" placeholder="AI, 未来, 科学"></label></div>
+      <label>来源（可选）<input name="source" placeholder="书籍、论文或链接"></label>
+      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" value="default" type="submit">保存概念</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
