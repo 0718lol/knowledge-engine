@@ -42,20 +42,19 @@ CONCEPTS = [
 ]
 
 RELATIONS = [
-    ("机器学习", "深度学习", "is_a", "深度学习是机器学习的一个子集", 1.0),
+    ("深度学习", "机器学习", "is_a", "深度学习是机器学习的一个子集", 1.0),
     ("机器学习", "自然语言处理", "supports", "NLP 大量使用机器学习算法", 0.9),
     ("深度学习", "自然语言处理", "supports", "现代 NLP 基于深度神经网络", 0.95),
     ("机器学习", "概率论", "depends_on", "机器学习算法依赖概率论和统计", 0.9),
     ("深度学习", "图论", "related_to", "神经网络结构可看作有向图", 0.5),
-    ("机器学习", "数据库", "supports", "数据库存储训练数据", 0.7),
+    ("数据库", "机器学习", "supports", "数据库为机器学习系统存储训练数据", 0.7),
     ("自然语言处理", "意识", "related_to", "NLP 试图模拟语言能力，与意识有交集", 0.4),
-    ("人工智能伦理", "人工智能伦理", "related_to", "AI 伦理与机器学习直接相关", 0.9),
-    ("进化论", "DNA", "supports", "DNA 是进化的分子基础", 0.95),
-    ("细胞", "DNA", "part_of", "DNA 存在于细胞核中", 1.0),
+    ("DNA", "进化论", "supports", "DNA 为进化论提供了分子层面的证据", 0.95),
+    ("DNA", "细胞", "part_of", "DNA 位于细胞内，是细胞遗传系统的一部分", 1.0),
     ("光合作用", "细胞", "depends_on", "光合作用发生在植物细胞中", 0.9),
     ("相对论", "黑洞", "supports", "广义相对论预言了黑洞的存在", 0.95),
     ("量子力学", "相对论", "contradicts", "量子力学与广义相对论在极端条件下不一致", 0.6),
-    ("大爆炸理论", "相对论", "supports", "广义相对论是大爆炸理论的基础", 0.9),
+    ("大爆炸理论", "相对论", "depends_on", "大爆炸宇宙学模型以广义相对论为理论基础", 0.9),
     ("黑洞", "大爆炸理论", "related_to", "黑洞奇点与大爆炸奇点有相似性", 0.5),
     ("热力学定律", "黑洞", "related_to", "黑洞热力学是热门研究领域", 0.7),
     ("图论", "TCP/IP协议", "supports", "网络路由协议基于图论算法", 0.8),
@@ -65,11 +64,11 @@ RELATIONS = [
     ("概率论", "量子力学", "supports", "量子力学本质上是概率性的", 0.8),
     ("意识", "人工智能伦理", "related_to", "AI 是否可能有意识是伦理讨论的核心", 0.6),
     ("机器学习", "人工智能伦理", "supports", "AI 伦理问题源于机器学习能力", 0.85),
-    ("深度学习", "强化学习", "is_a", "深度强化学习结合了深度学习和强化学习", 0.9),
+    ("深度学习", "强化学习", "related_to", "深度强化学习结合了深度学习和强化学习", 0.9),
     ("强化学习", "进化论", "related_to", "强化学习模拟了自然选择中的试错机制", 0.5),
     ("细胞", "进化论", "supports", "细胞是进化的基本单位", 0.8),
     ("光合作用", "热力学定律", "supports", "光合作用遵循能量守恒定律", 0.85),
-    ("操作系统", "TCP/IP协议", "depends_on", "操作系统实现了 TCP/IP 协议栈", 0.9),
+    ("操作系统", "TCP/IP协议", "related_to", "操作系统通常实现 TCP/IP 协议栈", 0.9),
 ]
 
 EVIDENCES = [
@@ -102,7 +101,9 @@ def seed():
     with connection() as conn:
         existing = conn.execute("SELECT COUNT(*) FROM concepts").fetchone()[0]
         if existing > 0:
-            print(f"Database already has {existing} concepts, skipping seed (use --force to re-seed).")
+            from curated_content import install
+            installed = install()
+            print(f"Database already has {existing} concepts; curated collection is ready ({installed['sections']} dossier sections).")
             return
 
     concept_map = {}
@@ -129,7 +130,10 @@ def seed():
             link_paper_to_concept(paper["id"], concept_map[concept_name], "primary")
             print(f"  + Paper: {title} → {concept_name}")
 
-    print(f"\n✓ Seeded {len(CONCEPTS)} concepts, {len(RELATIONS)} relations, {len(EVIDENCES)} evidences, {len(SEED_PAPERS)} papers.")
+    from curated_content import install
+    installed = install()
+
+    print(f"\n✓ Seeded base collection plus {installed['concepts']} curated concepts and {installed['sections']} dossier sections.")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import uuid
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "knowledge.db"
+SCHEMA_VERSION = 5
 
 
 def now_iso():
@@ -79,6 +80,61 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_id);
             CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_id);
             CREATE INDEX IF NOT EXISTS idx_evidence_concept ON evidence(concept_id);
+            CREATE TABLE IF NOT EXISTS concept_sections (
+                id TEXT PRIMARY KEY,
+                concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+                section_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(concept_id, section_type, title)
+            );
+            CREATE INDEX IF NOT EXISTS idx_concept_sections_concept
+                ON concept_sections(concept_id, sort_order);
+            CREATE TABLE IF NOT EXISTS issues (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL UNIQUE,
+                question TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                current_assessment TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS issue_concepts (
+                issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+                role TEXT NOT NULL DEFAULT 'related',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (issue_id, concept_id)
+            );
+            CREATE TABLE IF NOT EXISTS claims (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                statement TEXT NOT NULL,
+                position TEXT NOT NULL,
+                assessment TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                keywords TEXT NOT NULL DEFAULT '[]',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(issue_id, statement)
+            );
+            CREATE TABLE IF NOT EXISTS claim_evidence (
+                id TEXT PRIMARY KEY,
+                claim_id TEXT NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+                stance TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'context',
+                source_title TEXT NOT NULL DEFAULT '',
+                source_url TEXT NOT NULL DEFAULT '',
+                paper_id TEXT REFERENCES papers(id) ON DELETE SET NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(claim_id, stance, source_title, summary)
+            );
+            CREATE INDEX IF NOT EXISTS idx_claims_issue ON claims(issue_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_claim_evidence_claim ON claim_evidence(claim_id, sort_order);
             CREATE TABLE IF NOT EXISTS papers (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -133,15 +189,203 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_citations_cited ON paper_citations(cited_id);
             CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper ON paper_chunks(paper_id);
             CREATE INDEX IF NOT EXISTS idx_paths_hypothesis ON research_paths(hypothesis_id);
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
+        _run_migrations(conn)
+
+
+def _run_migrations(conn):
+    row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
+    version = int(row[0]) if row else 0
+
+    if version < 1:
+        conn.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS relations_validate_insert
+            BEFORE INSERT ON relations
+            BEGIN
+                SELECT CASE WHEN NEW.source_id = NEW.target_id
+                    THEN RAISE(ABORT, 'relation endpoints must differ') END;
+                SELECT CASE WHEN NEW.confidence < 0 OR NEW.confidence > 1
+                    THEN RAISE(ABORT, 'relation confidence out of range') END;
+            END;
+            CREATE TRIGGER IF NOT EXISTS relations_validate_update
+            BEFORE UPDATE ON relations
+            BEGIN
+                SELECT CASE WHEN NEW.source_id = NEW.target_id
+                    THEN RAISE(ABORT, 'relation endpoints must differ') END;
+                SELECT CASE WHEN NEW.confidence < 0 OR NEW.confidence > 1
+                    THEN RAISE(ABORT, 'relation confidence out of range') END;
+            END;
+            """
+        )
+        version = 1
+
+    if version < 2:
+        _repair_seed_relations(conn)
+        version = 2
+
+    if version < 3:
+        _rebuild_abstract_chunks(conn)
+        version = 3
+
+    if version < 4:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS concept_sections (
+                id TEXT PRIMARY KEY,
+                concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+                section_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(concept_id, section_type, title)
+            );
+            CREATE INDEX IF NOT EXISTS idx_concept_sections_concept
+                ON concept_sections(concept_id, sort_order);
+            """
+        )
+        version = 4
+
+    if version < 5:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS issues (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL UNIQUE,
+                question TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                current_assessment TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS issue_concepts (
+                issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+                role TEXT NOT NULL DEFAULT 'related',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (issue_id, concept_id)
+            );
+            CREATE TABLE IF NOT EXISTS claims (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                statement TEXT NOT NULL,
+                position TEXT NOT NULL,
+                assessment TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                keywords TEXT NOT NULL DEFAULT '[]',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(issue_id, statement)
+            );
+            CREATE TABLE IF NOT EXISTS claim_evidence (
+                id TEXT PRIMARY KEY,
+                claim_id TEXT NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+                stance TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                strength TEXT NOT NULL DEFAULT 'context',
+                source_title TEXT NOT NULL DEFAULT '',
+                source_url TEXT NOT NULL DEFAULT '',
+                paper_id TEXT REFERENCES papers(id) ON DELETE SET NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                UNIQUE(claim_id, stance, source_title, summary)
+            );
+            CREATE INDEX IF NOT EXISTS idx_claims_issue ON claims(issue_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_claim_evidence_claim ON claim_evidence(claim_id, sort_order);
+            """
+        )
+        version = 5
+
+    conn.execute(
+        """INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+        (str(version),),
+    )
+
+
+def _repair_seed_relations(conn):
+    """Repair known semantic errors from the original bundled seed data."""
+    names = (
+        "机器学习", "深度学习", "人工智能伦理", "细胞", "DNA", "强化学习",
+        "数据库", "进化论", "大爆炸理论", "相对论", "操作系统", "TCP/IP协议",
+    )
+    ids = {
+        row["name"]: row["id"]
+        for row in conn.execute(
+            f"SELECT id, name FROM concepts WHERE name IN ({','.join('?' for _ in names)})",
+            names,
+        ).fetchall()
+    }
+
+    ethics = ids.get("人工智能伦理")
+    if ethics:
+        conn.execute("DELETE FROM relations WHERE source_id = ? AND target_id = ?", (ethics, ethics))
+
+    repairs = [
+        ("机器学习", "深度学习", "is_a", "深度学习", "机器学习", "is_a"),
+        ("机器学习", "数据库", "supports", "数据库", "机器学习", "supports"),
+        ("进化论", "DNA", "supports", "DNA", "进化论", "supports"),
+        ("细胞", "DNA", "part_of", "DNA", "细胞", "part_of"),
+        ("大爆炸理论", "相对论", "supports", "大爆炸理论", "相对论", "depends_on"),
+        ("深度学习", "强化学习", "is_a", "深度学习", "强化学习", "related_to"),
+        ("操作系统", "TCP/IP协议", "depends_on", "操作系统", "TCP/IP协议", "related_to"),
+    ]
+    for old_source, old_target, old_type, new_source, new_target, new_type in repairs:
+        old_sid, old_tid = ids.get(old_source), ids.get(old_target)
+        new_sid, new_tid = ids.get(new_source), ids.get(new_target)
+        if not all((old_sid, old_tid, new_sid, new_tid)):
+            continue
+        row = conn.execute(
+            """SELECT id FROM relations
+               WHERE source_id = ? AND target_id = ? AND relation_type = ?""",
+            (old_sid, old_tid, old_type),
+        ).fetchone()
+        if not row:
+            continue
+        duplicate = conn.execute(
+            """SELECT id FROM relations
+               WHERE source_id = ? AND target_id = ? AND relation_type = ? AND id != ?""",
+            (new_sid, new_tid, new_type, row["id"]),
+        ).fetchone()
+        if duplicate:
+            conn.execute("DELETE FROM relations WHERE id = ?", (row["id"],))
+        else:
+            conn.execute(
+                "UPDATE relations SET source_id = ?, target_id = ?, relation_type = ? WHERE id = ?",
+                (new_sid, new_tid, new_type, row["id"]),
+            )
+
+
+def _rebuild_abstract_chunks(conn, chunk_size=500, overlap=50):
+    """Rebuild legacy token-joined chunks while preserving original prose."""
+    papers = conn.execute("SELECT id, abstract FROM papers WHERE abstract != ''").fetchall()
+    for paper in papers:
+        conn.execute("DELETE FROM paper_chunks WHERE paper_id = ?", (paper["id"],))
+        text = paper["abstract"].strip()
+        step = chunk_size - overlap
+        for index, start in enumerate(range(0, len(text), step)):
+            content = text[start:start + chunk_size].strip()
+            if content:
+                conn.execute(
+                    """INSERT INTO paper_chunks(id, paper_id, chunk_index, content, added_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (new_id(), paper["id"], index, content, now_iso()),
+                )
+            if start + chunk_size >= len(text):
+                break
 
 
 def row_dict(row):
     if row is None:
         return None
     item = dict(row)
-    for key in ("tags", "evidence_summary", "authors", "concepts", "papers"):
+    for key in ("tags", "evidence_summary", "authors", "concepts", "papers", "keywords"):
         if key in item:
             try:
                 item[key] = json.loads(item[key])

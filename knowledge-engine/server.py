@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 import json
 import mimetypes
+import sqlite3
 import traceback
 
 import database
@@ -16,6 +17,8 @@ import arxiv
 import evidence
 import paths
 import fulltext
+import issues
+import briefs
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -24,7 +27,12 @@ PORT = 8000
 
 
 def json_body(handler):
-    length = int(handler.headers.get("Content-Length", "0"))
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except (TypeError, ValueError):
+        raise ValueError("Content-Length 必须是整数")
+    if length < 0:
+        raise ValueError("Content-Length 不能为负数")
     if length > 1_000_000:
         raise ValueError("请求体过大")
     raw = handler.rfile.read(length)
@@ -40,14 +48,69 @@ def clean_text(value, field, required=True, max_length=5000):
     return value
 
 
+def clean_url(value, field="链接", required=False, max_length=1000):
+    value = clean_text(value, field, required, max_length)
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"{field}必须是 http 或 https 链接")
+    return value
+
+
+def clean_string_list(value, field, max_items=100, max_length=300):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field}必须是数组")
+    result = []
+    for item in value[:max_items]:
+        if not isinstance(item, str):
+            raise ValueError(f"{field}中的每一项必须是字符串")
+        item = item.strip()
+        if len(item) > max_length:
+            raise ValueError(f"{field}中的每一项不能超过{max_length}个字符")
+        if item:
+            result.append(item)
+    return result
+
+
+def int_query(query, name, default, minimum=0, maximum=200):
+    raw = (query.get(name) or [str(default)])[0]
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}必须是整数")
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name}必须在 {minimum} 到 {maximum} 之间")
+    return value
+
+
 def error_message(exc):
     if isinstance(exc, ValueError):
         return str(exc)
-    if "UNIQUE constraint failed" in str(exc):
-        return "名称已存在，请使用其他名称"
-    if "FOREIGN KEY constraint failed" in str(exc):
+    message = str(exc)
+    if "concepts.name" in message:
+        return "概念名称已存在"
+    if "papers.doi" in message:
+        return "该 DOI 已导入"
+    if "papers.arxiv_id" in message:
+        return "该 arXiv 论文已导入"
+    if "relations.source_id" in message:
+        return "这条关系已存在"
+    if "UNIQUE constraint failed" in message:
+        return "记录已存在"
+    if "FOREIGN KEY constraint failed" in message:
         return "关联的概念不存在"
     return "服务器处理失败"
+
+
+def error_status(exc):
+    if isinstance(exc, (ValueError, json.JSONDecodeError)):
+        return 400
+    if isinstance(exc, sqlite3.IntegrityError):
+        return 409
+    return 500
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -64,6 +127,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -72,6 +138,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -86,6 +155,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -108,11 +180,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/concepts":
                 q = (query.get("q") or [""])[0].strip()
                 category = (query.get("category") or [""])[0].strip()
+                limit = int_query(query, "limit", 50, 1, 100)
+                offset = int_query(query, "offset", 0, 0, 1_000_000)
                 if q:
-                    results = search.search(q, top_k=50)
+                    matches = search.search(q, top_k=1_000_000, category=category or None)
+                    total = len(matches)
+                    results = matches[offset:offset + limit]
                 else:
-                    results = knowledge.list_concepts(category=category or None)
-                return self.send_json({"items": results, "total": len(results)})
+                    results = knowledge.list_concepts(category=category or None, limit=limit, offset=offset)
+                    total = knowledge.count_concepts(category=category or None)
+                return self.send_json({"items": results, "total": total, "limit": limit, "offset": offset})
             if path == "/api/relations":
                 cid = (query.get("concept_id") or [None])[0]
                 return self.send_json({"items": knowledge.list_relations(cid)})
@@ -121,9 +198,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"items": knowledge.list_evidence(cid)})
             if path == "/api/hypotheses":
                 return self.send_json({"items": knowledge.list_hypotheses()})
+            if path == "/api/issues":
+                return self.send_json({"items": issues.list_issues()})
+            if path.startswith("/api/issues/"):
+                issue_id = path.rsplit("/", 1)[-1]
+                issue = issues.get_issue(issue_id)
+                if not issue:
+                    return self.send_json({"error": "专题不存在"}, 404)
+                return self.send_json(issue)
             if path == "/api/graph":
                 cid = (query.get("concept_id") or [None])[0]
                 if cid:
+                    if not knowledge.get_concept(cid):
+                        return self.send_json({"error": "概念不存在"}, 404)
                     svg, data = graph.render_svg(cid)
                 else:
                     svg, data = graph.render_full_graph()
@@ -136,11 +223,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(concept)
             if path == "/api/papers":
                 q = (query.get("q") or [""])[0].strip()
-                return self.send_json({"items": papers.list_papers(q=q or None), "total": 0})
+                limit = int_query(query, "limit", 50, 1, 100)
+                offset = int_query(query, "offset", 0, 0, 1_000_000)
+                items = papers.list_papers(q=q or None, limit=limit, offset=offset)
+                return self.send_json({"items": items, "total": papers.count_papers(q=q or None), "limit": limit, "offset": offset})
             if path == "/api/papers/fulltext":
                 q = (query.get("q") or [""])[0].strip()
                 if q:
-                    return self.send_json({"items": fulltext.search(q), "total": 0})
+                    items = fulltext.search(q)
+                    return self.send_json({"items": items, "total": len(items)})
                 return self.send_json({"items": [], "total": 0})
             if path.startswith("/api/papers/"):
                 cid = path.rsplit("/", 1)[-1]
@@ -166,22 +257,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"items": [], "total": 0})
             return self.send_json({"error": "接口不存在"}, 404)
         except Exception as exc:
-            traceback.print_exc()
-            self.send_json({"error": error_message(exc)}, 500)
+            status = error_status(exc)
+            if status == 500:
+                traceback.print_exc()
+            self.send_json({"error": error_message(exc)}, status)
 
     def do_POST(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         try:
             data = json_body(self)
+            if path == "/api/brief":
+                question = clean_text(data.get("question"), "研究问题", max_length=2000)
+                return self.send_json(briefs.build(question), 201)
             if path == "/api/concepts":
                 name = clean_text(data.get("name"), "概念名称", max_length=100)
                 description = clean_text(data.get("description"), "概念描述", max_length=5000)
                 category = clean_text(data.get("category"), "分类", required=False, max_length=50) or "未分类"
-                tags = data.get("tags") or []
-                if not isinstance(tags, list):
-                    raise ValueError("标签必须是数组")
-                concept = knowledge.create_concept(name, description, category, tags[:20], clean_text(data.get("source"), "来源", False, 500))
+                tags = clean_string_list(data.get("tags"), "标签", max_items=20, max_length=50)
+                concept = knowledge.create_concept(name, description, category, tags, clean_text(data.get("source"), "来源", False, 500))
                 return self.send_json(concept, 201)
             if path == "/api/relations":
                 source_id = clean_text(data.get("source_id"), "起点概念")
@@ -192,12 +286,12 @@ class Handler(BaseHTTPRequestHandler):
                 confidence = float(data.get("confidence", 0.5))
                 if not 0 <= confidence <= 1:
                     raise ValueError("置信度必须在 0 到 1 之间")
-                knowledge.create_relation(source_id, target_id, relation_type, clean_text(data.get("evidence"), "关系证据", False, 2000), confidence)
-                return self.send_json({"items": knowledge.list_relations(source_id)}, 201)
+                item = knowledge.create_relation(source_id, target_id, relation_type, clean_text(data.get("evidence"), "关系证据", False, 2000), confidence)
+                return self.send_json(item, 201)
             if path == "/api/evidence":
                 concept_id = clean_text(data.get("concept_id"), "关联概念")
                 content = clean_text(data.get("content"), "证据内容", max_length=5000)
-                item = knowledge.create_evidence(concept_id, content, clean_text(data.get("source_url"), "来源链接", False, 1000), clean_text(data.get("source_title"), "来源标题", False, 300))
+                item = knowledge.create_evidence(concept_id, content, clean_url(data.get("source_url"), "来源链接"), clean_text(data.get("source_title"), "来源标题", False, 300))
                 return self.send_json(item, 201)
             if path == "/api/hypothesis":
                 statement = clean_text(data.get("statement"), "假设内容", max_length=2000)
@@ -208,8 +302,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/hypothesis/paths":
                 statement = clean_text(data.get("statement"), "假设内容", max_length=2000)
                 analysis = evidence.analyze(statement)
-                hypothesis = reasoning.verify(statement)
-                return self.send_json({"paths": paths.generate(analysis, hypothesis.get("id")), "hypothesis_id": hypothesis.get("id"), "analysis": analysis}, 201)
+                hypothesis_id = clean_text(data.get("hypothesis_id", ""), "假设ID", required=False, max_length=64)
+                if not hypothesis_id:
+                    hypothesis_id = reasoning.verify(statement).get("id")
+                return self.send_json({"paths": paths.generate(analysis, hypothesis_id), "hypothesis_id": hypothesis_id, "analysis": analysis}, 201)
             if path == "/api/paths/select":
                 path_id = clean_text(data.get("path_id"), "路径ID")
                 note = clean_text(data.get("note", ""), "决策说明", required=False, max_length=1000)
@@ -219,9 +315,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(result)
             if path == "/api/papers":
                 title = clean_text(data.get("title"), "论文标题", max_length=500)
-                authors = data.get("authors") or []
-                if not isinstance(authors, list):
-                    raise ValueError("authors 必须是数组")
+                authors = clean_string_list(data.get("authors"), "authors", max_items=100, max_length=300)
                 paper = papers.create_paper(
                     title, authors,
                     clean_text(data.get("venue", ""), "发表期刊", False, 200),
@@ -230,8 +324,10 @@ class Handler(BaseHTTPRequestHandler):
                     clean_text(data.get("arxiv_id", ""), "arXiv ID", False, 100),
                     clean_text(data.get("abstract", ""), "摘要", False, 10000),
                     "",
-                    clean_text(data.get("url", ""), "链接", False, 500),
+                    clean_url(data.get("url", ""), "链接", max_length=500),
                 )
+                if paper.get("abstract"):
+                    fulltext.chunk_paper(paper["id"], paper["abstract"])
                 # Auto-link to concepts
                 conc = knowledge.list_concepts(q=title, limit=5)
                 for c in conc:
@@ -255,8 +351,10 @@ class Handler(BaseHTTPRequestHandler):
                         entry.get("venue", ""), entry.get("year"),
                         entry.get("doi", ""), entry.get("arxiv_id", ""),
                         entry.get("abstract", ""), bibtext[:2000],
-                        entry.get("url", ""),
+                        clean_url(entry.get("url", ""), "链接", max_length=500),
                     )
+                    if paper.get("abstract"):
+                        fulltext.chunk_paper(paper["id"], paper["abstract"])
                     conc = knowledge.list_concepts(q=paper["title"], limit=3)
                     for c in conc:
                         papers.link_paper_to_concept(paper["id"], c["id"], "related")
@@ -276,6 +374,8 @@ class Handler(BaseHTTPRequestHandler):
                     doi, "",
                     meta.get("abstract", ""), "", meta.get("url", ""),
                 )
+                if paper.get("abstract"):
+                    fulltext.chunk_paper(paper["id"], paper["abstract"])
                 conc = knowledge.list_concepts(q=paper["title"], limit=3)
                 for c in conc:
                     papers.link_paper_to_concept(paper["id"], c["id"], "related")
@@ -303,8 +403,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(paper, 201)
             return self.send_json({"error": "接口不存在"}, 404)
         except Exception as exc:
-            traceback.print_exc()
-            self.send_json({"error": error_message(exc)}, 400)
+            status = error_status(exc)
+            if status == 500:
+                traceback.print_exc()
+            self.send_json({"error": error_message(exc)}, status)
 
     def do_PUT(self):
         parsed = urlparse(self.path)
@@ -316,17 +418,22 @@ class Handler(BaseHTTPRequestHandler):
                 if not knowledge.get_concept(cid):
                     return self.send_json({"error": "概念不存在"}, 404)
                 updates = {}
-                for field in ("name", "description", "category", "source"):
+                field_rules = {
+                    "name": (True, 100), "description": (True, 5000),
+                    "category": (True, 50), "source": (False, 500),
+                }
+                for field, (required, max_length) in field_rules.items():
                     if field in data:
-                        updates[field] = clean_text(data[field], field, max_length=5000)
+                        updates[field] = clean_text(data[field], field, required=required, max_length=max_length)
                 if "tags" in data:
-                    if not isinstance(data["tags"], list):
-                        raise ValueError("标签必须是数组")
-                    updates["tags"] = data["tags"][:20]
+                    updates["tags"] = clean_string_list(data["tags"], "标签", max_items=20, max_length=50)
                 return self.send_json(knowledge.update_concept(cid, **updates))
             return self.send_json({"error": "接口不存在"}, 404)
         except Exception as exc:
-            self.send_json({"error": error_message(exc)}, 400)
+            status = error_status(exc)
+            if status == 500:
+                traceback.print_exc()
+            self.send_json({"error": error_message(exc)}, status)
 
 
 def run(host=HOST, port=PORT):

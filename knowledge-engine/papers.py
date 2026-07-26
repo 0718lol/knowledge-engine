@@ -130,29 +130,49 @@ def list_papers(q=None, limit=50, offset=0):
         ).fetchall())
 
 
+def count_papers(q=None):
+    with connection() as conn:
+        if q:
+            like = f"%{q}%"
+            return conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE title LIKE ? OR authors LIKE ? OR abstract LIKE ?",
+                (like, like, like),
+            ).fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+
+
 def get_paper(paper_id):
     with connection() as conn:
         return row_dict(conn.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone())
 
 
 def get_paper_by_doi(doi):
+    doi = _normalize_doi(doi)
     with connection() as conn:
         return row_dict(conn.execute("SELECT * FROM papers WHERE doi = ?", (doi,)).fetchone())
 
 
 def get_paper_by_arxiv(arxiv_id):
+    arxiv_id = str(arxiv_id or "").strip()
     with connection() as conn:
         return row_dict(conn.execute("SELECT * FROM papers WHERE arxiv_id = ?", (arxiv_id,)).fetchone())
 
 
 def create_paper(title, authors=None, venue="", year=None, doi="", arxiv_id="", abstract="", bibtex="", url=""):
+    title = str(title or "").strip()
+    if not title:
+        raise ValueError("论文标题不能为空")
+    authors = _normalize_authors(authors)
+    year = _normalize_year(year)
+    doi = _normalize_doi(doi)
+    arxiv_id = str(arxiv_id or "").strip()
     now = now_iso()
     pid = new_id()
     with connection() as conn:
         conn.execute(
             """INSERT INTO papers (id, title, authors, venue, year, doi, arxiv_id, abstract, bibtex, url, added_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (pid, title, json.dumps(authors or []), venue, year, doi, arxiv_id, abstract, bibtex, url, now)
+            (pid, title, json.dumps(authors), venue, year, doi, arxiv_id, abstract, bibtex, url, now)
         )
         row = conn.execute("SELECT * FROM papers WHERE id = ?", (pid,)).fetchone()
     return row_dict(row)
@@ -164,7 +184,11 @@ def update_paper(paper_id, **kwargs):
     if not updates:
         return get_paper(paper_id)
     if "authors" in updates and isinstance(updates["authors"], list):
-        updates["authors"] = json.dumps(updates["authors"])
+        updates["authors"] = json.dumps(_normalize_authors(updates["authors"]))
+    if "year" in updates:
+        updates["year"] = _normalize_year(updates["year"])
+    if "doi" in updates:
+        updates["doi"] = _normalize_doi(updates["doi"])
     cols = ", ".join(f"{k} = ?" for k in updates)
     vals = list(updates.values()) + [paper_id]
     with connection() as conn:
@@ -267,3 +291,36 @@ def search_chunks(query, limit=20):
                ORDER BY pc.chunk_index LIMIT ?""",
             (like, limit)
         ).fetchall())
+
+
+def _normalize_authors(authors):
+    if authors is None:
+        return []
+    if not isinstance(authors, list):
+        raise ValueError("authors 必须是数组")
+    normalized = []
+    for author in authors[:100]:
+        if not isinstance(author, str):
+            raise ValueError("作者姓名必须是字符串")
+        name = author.strip()
+        if name:
+            normalized.append(name[:300])
+    return normalized
+
+
+def _normalize_year(year):
+    if year in (None, ""):
+        return None
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        raise ValueError("年份必须是整数")
+    if not 1000 <= year <= 3000:
+        raise ValueError("年份超出有效范围")
+    return year
+
+
+def _normalize_doi(doi):
+    value = str(doi or "").strip().lower()
+    value = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", value)
+    return value

@@ -1,56 +1,72 @@
-"""Hypothesis verification engine: delegates to evidence analysis for strict results."""
-import re
-from database import connection
-from search import search
+"""Conservative hypothesis verdicts based on claim-aligned graph evidence."""
 from evidence import analyze as evidence_analyze
+from issues import match_claims
 
 
-def _tokenize(text):
-    tokens = set(re.findall(r"[a-z0-9]+", text.lower()))
-    for block in re.findall(r"[一-鿿]+", text.lower()):
-        tokens.add(block)
-        tokens.update(block[i:i + 2] for i in range(len(block) - 1))
-    return tokens
+LEVEL_SCORES = {"strong": 0.9, "moderate": 0.7, "weak": 0.5}
 
 
 def verify(statement):
-    """Evaluate a hypothesis statement using the strict evidence analysis engine.
-
-    Returns a verdict dict with evidence levels, counterexamples, and open questions.
-    """
     analysis = evidence_analyze(statement)
+    claim = analysis["parsed_claim"]
+    supports = analysis["supports"]
+    contradicts = analysis["contradicts"]
 
-    if not analysis.get("related_concepts"):
-        result = create_hypothesis(statement, "unknown", 0, {})
-        return result
-
-    supports = analysis.get("supports", [])
-    contradicts = analysis.get("contradicts", [])
-
-    support_score = sum(1 for s in supports if s["level"] in ("strong", "moderate"))
-    contradict_score = sum(1 for c in contradicts if c["level"] in ("strong", "moderate"))
-
-    if support_score > contradict_score:
-        status = "supports"
-        confidence = support_score / max(support_score + contradict_score, 1)
-    elif contradict_score > support_score:
-        status = "contradicts"
-        confidence = contradict_score / max(support_score + contradict_score, 1)
-    else:
+    if not claim["mentioned_concepts"]:
+        status = "unknown"
+        match_score = 0
+        rationale = "没有识别到本地知识库中的概念。"
+    elif not claim["complete"]:
         status = "inconclusive"
-        confidence = 0.5
+        match_score = 0
+        rationale = "命题缺少可识别的主体、关系或客体。"
+    else:
+        support_score = _best_score(supports)
+        contradict_score = _best_score(contradicts)
+        if support_score and support_score >= contradict_score + 0.1:
+            status = "supports"
+            match_score = support_score
+            rationale = "当前知识库存在与命题方向一致的关系证据。"
+        elif contradict_score and contradict_score >= support_score + 0.1:
+            status = "contradicts"
+            match_score = contradict_score
+            rationale = "当前知识库存在与命题冲突或方向相反的关系证据。"
+        else:
+            status = "inconclusive"
+            match_score = max(support_score, contradict_score)
+            rationale = "当前证据不足，或支持与反对信号无法区分。"
 
-    evidence_summary = {
+    summary = {
+        "parsed_claim": claim,
+        "rationale": rationale,
         "supports": supports[:5],
         "contradicts": contradicts[:5],
-        "counterexamples": analysis.get("counterexamples", [])[:3],
-        "open_questions": analysis.get("open_questions", [])[:5],
-        "related_concepts": analysis.get("related_concepts", []),
-        "related_papers": analysis.get("related_papers", [])[:5],
-        "overall_level": analysis.get("overall_level", "none"),
+        "counterexamples": analysis["counterexamples"][:3],
+        "context_relations": analysis["context_relations"][:5],
+        "context_evidence": analysis["context_evidence"][:5],
+        "open_questions": analysis["open_questions"][:5],
+        "related_concepts": analysis["related_concepts"],
+        "related_papers": analysis["related_papers"][:5],
+        "overall_level": analysis["overall_level"],
+        "limitations": analysis["limitations"],
+        "score_label": "证据匹配度",
+        "curated_claims": match_claims(statement),
     }
+    return create_hypothesis(statement, status, round(match_score, 3), summary)
 
-    return create_hypothesis(statement, status, round(confidence, 3), evidence_summary)
+
+def _best_score(items):
+    if not items:
+        return 0
+    scores = []
+    for item in items:
+        base = LEVEL_SCORES.get(item.get("level"), 0.4)
+        confidence = float(item.get("confidence", 0.5))
+        score = min(base, confidence)
+        if item.get("match_kind") == "inferred":
+            score = min(score, 0.6)
+        scores.append(score)
+    return max(scores)
 
 
 def create_hypothesis(statement, result, confidence, evidence_summary):

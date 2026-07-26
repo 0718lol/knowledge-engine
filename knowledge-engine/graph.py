@@ -1,7 +1,20 @@
 """SVG knowledge graph rendering."""
 from database import connection
-import json
+from html import escape
 import math
+import unicodedata
+
+from knowledge import RELATION_LABELS
+
+
+def _text_width(text, font_size):
+    """Estimate SVG text width for mixed CJK and Latin labels."""
+    units = sum(1 if unicodedata.east_asian_width(char) in {"W", "F"} else 0.58 for char in text)
+    return units * font_size
+
+
+def _node_width(name, font_size, minimum, maximum=150):
+    return min(maximum, max(minimum, math.ceil(_text_width(name, font_size) + 22)))
 
 
 def _load_graph_data(concept_id):
@@ -94,6 +107,10 @@ def render_svg(concept_id, width=600, height=500):
         return None, {"error": "Concept not found"}
 
     nodes = _layout_nodes(concept, extra)
+    for node in nodes:
+        node["width"] = _node_width(
+            node["name"], 11, 56 if node["is_center"] else 44
+        )
 
     # Build node map
     node_map = {n["id"]: n for n in nodes}
@@ -131,11 +148,12 @@ def render_svg(concept_id, width=600, height=500):
         dist = math.hypot(dx, dy)
         if dist < 1:
             continue
-        r = 25
-        sx2 = sx + dx * r / dist
-        sy2 = sy + dy * r / dist
-        tx2 = tx - dx * r / dist
-        ty2 = ty - dy * r / dist
+        source_offset = edge["source"]["width"] / 2 + 3
+        target_offset = edge["target"]["width"] / 2 + 5
+        sx2 = sx + dx * source_offset / dist
+        sy2 = sy + dy * source_offset / dist
+        tx2 = tx - dx * target_offset / dist
+        ty2 = ty - dy * target_offset / dist
         svg_parts.append(
             f'<line x1="{sx2:.1f}" y1="{sy2:.1f}" x2="{tx2:.1f}" y2="{ty2:.1f}" '
             f'stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)" />'
@@ -145,21 +163,23 @@ def render_svg(concept_id, width=600, height=500):
         my = (sy + ty) / 2 - 8
         svg_parts.append(
             f'<text x="{mx:.1f}" y="{my:.1f}" text-anchor="middle" '
-            f'fill="#64748b" font-size="10" font-family="sans-serif">{edge["type"]}</text>'
+            f'fill="#64748b" font-size="10" font-family="sans-serif">'
+            f'{escape(RELATION_LABELS.get(edge["type"], edge["type"]))}</text>'
         )
 
     # Nodes
     for node in nodes:
         color = _color_for_category(node["category"])
-        r = 28 if node["is_center"] else 22
+        node_width = node["width"]
+        half_width = node_width / 2
         svg_parts.append(
-            f'<rect x="{node["x"] - r}" y="{node["y"] - 10}" width="{r * 2}" height="20" rx="10" '
+            f'<rect x="{node["x"] - half_width:.1f}" y="{node["y"] - 12}" width="{node_width}" height="24" rx="12" '
             f'fill="{color}" opacity="0.9" />'
         )
         svg_parts.append(
             f'<text x="{node["x"]}" y="{node["y"] + 4}" text-anchor="middle" '
             f'fill="white" font-size="11" font-weight="600" font-family="sans-serif">'
-            f'{node["name"]}</text>'
+            f'{escape(node["name"])}</text>'
         )
 
     svg_parts.append("</svg>")
@@ -199,6 +219,7 @@ def render_full_graph(max_nodes=30, width=700, height=550):
             "x": round(cx + r * math.cos(angle), 1),
             "y": round(cy + r * math.sin(angle), 1),
             "degree": row["degree"],
+            "width": _node_width(row["name"], 9, 40),
         })
 
     node_map = {n["id"]: n for n in nodes}
@@ -233,11 +254,12 @@ def render_full_graph(max_nodes=30, width=700, height=550):
         dist = math.hypot(dx, dy)
         if dist < 1:
             continue
-        r = 20
-        sx2 = sx + dx * r / dist
-        sy2 = sy + dy * r / dist
-        tx2 = tx - dx * r / dist
-        ty2 = ty - dy * r / dist
+        source_offset = edge["source"]["width"] / 2 + 3
+        target_offset = edge["target"]["width"] / 2 + 5
+        sx2 = sx + dx * source_offset / dist
+        sy2 = sy + dy * source_offset / dist
+        tx2 = tx - dx * target_offset / dist
+        ty2 = ty - dy * target_offset / dist
         svg_parts.append(
             f'<line x1="{sx2:.1f}" y1="{sy2:.1f}" x2="{tx2:.1f}" y2="{ty2:.1f}" '
             f'stroke="#cbd5e1" stroke-width="1" marker-end="url(#arrowhead)" />'
@@ -245,13 +267,15 @@ def render_full_graph(max_nodes=30, width=700, height=550):
 
     for node in nodes:
         color = _color_for_category(node["category"])
+        node_width = node["width"]
+        half_width = node_width / 2
         svg_parts.append(
-            f'<rect x="{node["x"] - 20}" y="{node["y"] - 8}" width="40" height="16" rx="8" '
+            f'<rect x="{node["x"] - half_width:.1f}" y="{node["y"] - 10}" width="{node_width}" height="20" rx="10" '
             f'fill="{color}" opacity="0.85" />'
         )
         svg_parts.append(
             f'<text x="{node["x"]}" y="{node["y"] + 3}" text-anchor="middle" '
-            f'fill="white" font-size="9" font-weight="600">{node["name"]}</text>'
+            f'fill="white" font-size="9" font-weight="600">{escape(node["name"])}</text>'
         )
 
     svg_parts.append("</svg>")

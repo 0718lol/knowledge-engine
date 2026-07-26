@@ -15,10 +15,16 @@ def _tokenize(text):
     return tokens
 
 
-def _build_index():
+def _build_index(category=None):
     """Build a term → {doc_id → tf} map from all concepts."""
     with connection() as conn:
-        rows = conn.execute("SELECT id, name, description, category, tags FROM concepts").fetchall()
+        if category:
+            rows = conn.execute(
+                "SELECT id, name, description, category, tags FROM concepts WHERE category = ?",
+                (category,),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT id, name, description, category, tags FROM concepts").fetchall()
 
     doc_count = len(rows)
     if doc_count == 0:
@@ -38,9 +44,9 @@ def _build_index():
     return index, doc_terms, doc_count
 
 
-def search(query, top_k=20):
+def search(query, top_k=20, category=None):
     """Return list of {id, name, description, category, score} sorted by TF-IDF relevance."""
-    index, doc_terms, doc_count = _build_index()
+    index, doc_terms, doc_count = _build_index(category)
     if doc_count == 0:
         return []
 
@@ -71,15 +77,21 @@ def search(query, top_k=20):
     # Get top-k
     ranked = sorted(scores.items(), key=lambda x: -x[1])[:top_k]
 
+    if not ranked:
+        return []
+    score_map = dict(ranked)
+    placeholders = ",".join("?" for _ in ranked)
     with connection() as conn:
-        results = []
-        for doc_id, score in ranked:
-            row = conn.execute(
-                "SELECT id, name, description, category FROM concepts WHERE id = ?",
-                (doc_id,)
-            ).fetchone()
-            if row:
-                item = dict(row)
-                item["score"] = round(score, 4)
-                results.append(item)
+        rows = conn.execute(
+            f"SELECT id, name, description, category FROM concepts WHERE id IN ({placeholders})",
+            [doc_id for doc_id, _ in ranked],
+        ).fetchall()
+    row_map = {row["id"]: row for row in rows}
+    results = []
+    for doc_id, _ in ranked:
+        row = row_map.get(doc_id)
+        if row:
+            item = dict(row)
+            item["score"] = round(score_map[doc_id], 4)
+            results.append(item)
     return results

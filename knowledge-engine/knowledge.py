@@ -3,10 +3,30 @@ from database import connection, row_dict, rows_dict, new_id, now_iso
 import json
 
 
+RELATION_TYPES = ("causes", "contradicts", "supports", "is_a", "part_of", "example", "related_to", "depends_on")
+RELATION_LABELS = {
+    "causes": "导致",
+    "contradicts": "矛盾",
+    "supports": "支持",
+    "is_a": "属于",
+    "part_of": "组成部分",
+    "example": "示例",
+    "related_to": "相关",
+    "depends_on": "依赖",
+}
+
+
 # ─── Concepts ───────────────────────────────────────────────────────────────────
 
 def list_concepts(q=None, category=None, limit=50, offset=0):
     with connection() as conn:
+        if q and category:
+            return rows_dict(conn.execute(
+                """SELECT * FROM concepts
+                   WHERE (name LIKE ? OR description LIKE ?) AND category = ?
+                   ORDER BY updated_at DESC LIMIT ? OFFSET ?""",
+                (f"%{q}%", f"%{q}%", category, limit, offset)
+            ).fetchall())
         if q:
             return rows_dict(conn.execute(
                 """SELECT * FROM concepts WHERE name LIKE ? OR description LIKE ?
@@ -24,11 +44,33 @@ def list_concepts(q=None, category=None, limit=50, offset=0):
         ).fetchall())
 
 
+def count_concepts(q=None, category=None):
+    clauses = []
+    params = []
+    if q:
+        clauses.append("(name LIKE ? OR description LIKE ?)")
+        params.extend((f"%{q}%", f"%{q}%"))
+    if category:
+        clauses.append("category = ?")
+        params.append(category)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connection() as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM concepts{where}", params).fetchone()[0]
+
+
 def get_concept(concept_id):
     with connection() as conn:
-        return row_dict(conn.execute(
+        concept = row_dict(conn.execute(
             "SELECT * FROM concepts WHERE id = ?", (concept_id,)
         ).fetchone())
+        if concept:
+            concept["sections"] = rows_dict(conn.execute(
+                """SELECT section_type, title, content
+                   FROM concept_sections WHERE concept_id = ?
+                   ORDER BY sort_order, created_at""",
+                (concept_id,),
+            ).fetchall())
+        return concept
 
 
 def get_concept_by_name(name):
@@ -95,6 +137,12 @@ def list_relations(concept_id=None, limit=200):
 
 
 def create_relation(source_id, target_id, relation_type, evidence="", confidence=0.5):
+    if source_id == target_id:
+        raise ValueError("关系的两个概念不能相同")
+    if relation_type not in RELATION_TYPES:
+        raise ValueError("不支持的关系类型")
+    if not 0 <= confidence <= 1:
+        raise ValueError("置信度必须在 0 到 1 之间")
     now = now_iso()
     rid = new_id()
     with connection() as conn:
@@ -104,11 +152,19 @@ def create_relation(source_id, target_id, relation_type, evidence="", confidence
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (rid, source_id, target_id, relation_type, evidence, confidence, now)
         )
-    return list_relations()  # find the one we just inserted
+        row = conn.execute(
+            """SELECT r.*, cs.name AS source_name, ct.name AS target_name
+               FROM relations r
+               JOIN concepts cs ON cs.id = r.source_id
+               JOIN concepts ct ON ct.id = r.target_id
+               WHERE r.source_id = ? AND r.target_id = ? AND r.relation_type = ?""",
+            (source_id, target_id, relation_type),
+        ).fetchone()
+    return row_dict(row)
 
 
 def get_relation_types():
-    return ["causes", "contradicts", "supports", "is_a", "part_of", "example", "related_to", "depends_on"]
+    return list(RELATION_TYPES)
 
 
 def delete_relation(relation_id):

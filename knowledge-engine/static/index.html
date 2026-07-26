@@ -3,101 +3,200 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14202b">
   <title>Atlas · 人类知识与科学发现引擎</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand-mark">A</div>
-    <div class="brand-copy">
-      <strong>ATLAS</strong>
-      <span>人类知识与科学发现引擎</span>
-    </div>
-    <div class="top-actions">
-      <span class="status-dot"></span><span>本地知识库已连接</span>
-      <button class="ghost-btn" id="refresh-btn">刷新</button>
-    </div>
+  <header class="app-header topbar">
+    <a class="brand" href="#explore" aria-label="Atlas 首页">
+      <span class="brand-mark">A</span>
+      <span class="brand-copy"><strong>ATLAS</strong><small>人类知识与科学发现引擎</small></span>
+    </a>
+    <nav class="view-tabs" aria-label="主视图">
+      <button class="view-tab active" data-view="research" aria-selected="true">研究</button>
+      <button class="view-tab" data-view="explore" aria-selected="false">图谱</button>
+      <button class="view-tab" data-view="issues" aria-selected="false">议题</button>
+      <button class="view-tab" data-view="hypothesis" aria-selected="false">验证</button>
+      <button class="view-tab" data-view="papers" aria-selected="false">文献</button>
+    </nav>
+    <div class="connection" id="connection-status"><i></i><span>正在连接</span></div>
+    <button class="icon-button" id="refresh-btn" title="刷新数据" aria-label="刷新数据">↻</button>
   </header>
 
-  <main class="shell">
-    <section class="hero">
-      <div>
+  <main class="app-main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
         <p class="eyebrow">OPEN KNOWLEDGE / 01</p>
-        <h1>让知识彼此相遇，<br><em>让发现开始发生。</em></h1>
+        <h1 id="hero-title">让知识彼此相遇，<br><em>让发现开始发生。</em></h1>
         <p class="hero-text">探索概念之间尚未被看见的关系。把碎片化的信息，变成可验证、可连接、可共同编辑的知识网络。</p>
       </div>
       <div class="hero-orbit" aria-hidden="true"><span class="orbit-core">∞</span><i></i><i></i><i></i></div>
     </section>
 
-    <section class="stats-grid" id="stats-grid">
-      <div class="stat-card"><span class="stat-label">概念</span><strong id="stat-concepts">—</strong><small>已收录节点</small></div>
-      <div class="stat-card"><span class="stat-label">关系</span><strong id="stat-relations">—</strong><small>跨领域连接</small></div>
-      <div class="stat-card"><span class="stat-label">证据</span><strong id="stat-evidence">—</strong><small>可追溯来源</small></div>
-      <div class="stat-card accent"><span class="stat-label">假设</span><strong id="stat-hypotheses">—</strong><small>已完成验证</small></div>
+    <section class="overview stats-grid" aria-label="知识库概览">
+      <div class="metrics">
+        <div class="stat-card"><span>概念</span><strong id="stat-concepts">—</strong><small>已收录节点</small></div>
+        <div class="stat-card"><span>关系</span><strong id="stat-relations">—</strong><small>跨领域连接</small></div>
+        <div class="stat-card"><span>证据</span><strong id="stat-evidence">—</strong><small>可追溯来源</small></div>
+        <div class="stat-card accent"><span>假设</span><strong id="stat-hypotheses">—</strong><small>已完成验证</small></div>
+      </div>
     </section>
 
-    <section class="workspace">
-      <aside class="sidebar">
-        <div class="panel-heading"><div><p class="eyebrow">EXPLORE</p><h2>知识探索</h2></div><button class="icon-btn" id="new-concept-btn" title="添加概念">＋</button></div>
-        <label class="search-box"><span>⌕</span><input id="search-input" type="search" placeholder="搜索概念、领域或描述…"><kbd>⌘ K</kbd></label>
-        <div class="filter-row" id="category-filters"><button class="filter active" data-category="">全部</button><button class="filter" data-category="人工智能">AI</button><button class="filter" data-category="生物学">生物</button><button class="filter" data-category="物理学">物理</button></div>
-        <div class="concept-list" id="concept-list"><div class="loading">正在加载知识节点…</div></div>
-        <button class="wide-btn" id="open-global-graph">查看全局知识图谱 <span>↗</span></button>
-      </aside>
-
-      <section class="content-panel">
-        <div class="empty-state" id="empty-state">
-          <div class="empty-icon">✦</div><p class="eyebrow">SELECT A NODE TO BEGIN</p><h2>选择一个概念<br>开始探索它的宇宙</h2><p>从左侧搜索或选择一个概念。你将看到它的定义、证据，以及和其他领域的连接。</p>
-        </div>
-        <div id="concept-detail" class="hidden"></div>
+    <section class="app-view active" id="view-research" data-view-panel="research">
+      <div class="view-heading research-heading">
+        <div><p class="eyebrow">QUESTION TO EVIDENCE</p><h2>研究问题</h2></div>
+        <span class="method-badge">本地证据简报</span>
+      </div>
+      <section class="research-workspace">
+        <form id="brief-form" class="brief-form">
+          <label for="brief-input">你想弄清楚什么？</label>
+          <div><textarea id="brief-input" maxlength="2000" required>AI 能否独立完成科学发现？</textarea><button class="button primary" type="submit">生成证据简报 <span>→</span></button></div>
+          <div class="brief-suggestions" id="brief-suggestions">
+            <button type="button" data-question="AI 能否独立完成科学发现？">AI 与科学发现</button>
+            <button type="button" data-question="AlphaFold 是否已经解决蛋白质结构预测？">AlphaFold 的边界</button>
+            <button type="button" data-question="大语言模型真的理解语言吗？">语言模型与理解</button>
+          </div>
+        </form>
+        <div id="brief-result" class="brief-result"><div class="loading">正在整理本地知识与来源…</div></div>
       </section>
     </section>
 
-    <section class="discovery-grid">
-      <div class="hypothesis-card">
-        <div class="panel-heading"><div><p class="eyebrow">DISCOVERY LAB</p><h2>验证一个假设</h2></div><span class="spark">✦</span></div>
-        <p class="muted">提出一个你正在思考的判断，Atlas 会根据当前知识网络寻找支持、反对、反例和开放问题。</p>
-        <form id="hypothesis-form"><textarea id="hypothesis-input" placeholder="例如：深度学习的发展会加速科学发现？" required></textarea><div class="form-actions"><button class="primary-btn" type="submit">开始严格分析 <span>→</span></button><button class="ghost-btn" type="button" id="path-btn">生成研究路径</button></div></form>
-        <div id="hypothesis-result" class="hidden"></div>
-        <div id="paths-result" class="hidden"></div>
+    <section class="app-view" id="view-explore" data-view-panel="explore" hidden>
+      <div class="view-heading">
+        <div><p class="eyebrow">KNOWLEDGE GRAPH</p><h2>知识网络</h2></div>
+        <div class="heading-actions">
+          <button class="button secondary" id="open-global-graph">全局图谱 <span>↗</span></button>
+          <button class="button primary" id="new-concept-btn">添加概念 <span>＋</span></button>
+        </div>
       </div>
-      <div class="history-card"><div class="panel-heading"><div><p class="eyebrow">RECENT THINKING</p><h2>最近的假设</h2></div></div><div id="hypothesis-history" class="history-list"><div class="loading">暂无记录</div></div></div>
+      <div class="explorer-grid">
+        <aside class="panel concept-browser">
+          <label class="search-field"><span>⌕</span><input id="search-input" type="search" placeholder="搜索概念、标签或描述"><kbd>⌘ K</kbd></label>
+          <div class="filter-row" id="category-filters"><button class="filter active" data-category="">全部</button></div>
+          <div class="list-summary"><span id="concept-result-count">正在加载</span><span>按相关度与更新时间排序</span></div>
+          <div class="concept-list" id="concept-list"><div class="loading">正在加载知识节点…</div></div>
+        </aside>
+        <article class="panel detail-panel">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-symbol">⌘</div>
+            <h3>选择一个概念</h3>
+            <p>定义、关系图与来源证据会集中显示在这里。</p>
+          </div>
+          <div id="concept-detail" class="hidden"></div>
+        </article>
+      </div>
     </section>
 
-    <section class="paper-lab">
-      <div class="paper-lab-head"><div><p class="eyebrow">LITERATURE LAYER</p><h2>论文与真实证据</h2><p class="muted">把论文作为知识网络的可追溯证据层。支持 BibTeX 导入、本地全文检索和 arXiv 探索。</p></div><div class="paper-actions"><button class="ghost-btn" id="arxiv-btn">搜索 arXiv</button><button class="primary-btn" id="bibtex-btn">导入 BibTeX <span>＋</span></button></div></div>
-      <div class="paper-search"><span>⌕</span><input id="paper-search-input" type="search" placeholder="搜索已收藏的论文…"></div>
-      <div id="paper-list" class="paper-list"><div class="loading">正在加载论文…</div></div>
-      <div id="arxiv-results" class="arxiv-results hidden"></div>
+    <section class="app-view" id="view-issues" data-view-panel="issues" hidden>
+      <div class="view-heading">
+        <div><p class="eyebrow">RESEARCH QUESTIONS</p><h2>争议与判断</h2></div>
+        <span class="method-badge">命题 · 证据 · 条件</span>
+      </div>
+      <div class="issue-layout">
+        <aside class="panel issue-browser">
+          <div class="panel-title"><div><p class="eyebrow">CURATED ISSUES</p><h3>研究议题</h3></div><span id="issue-count">0</span></div>
+          <div id="issue-list" class="issue-list"><div class="loading">正在加载议题…</div></div>
+        </aside>
+        <article id="issue-detail" class="issue-detail"><div class="loading">正在整理命题与证据…</div></article>
+      </div>
+    </section>
+
+    <section class="app-view" id="view-hypothesis" data-view-panel="hypothesis" hidden>
+      <div class="view-heading">
+        <div><p class="eyebrow">CLAIM ANALYSIS</p><h2>假设验证</h2></div>
+        <span class="method-badge">结构化命题 · 保守结论</span>
+      </div>
+      <div class="hypothesis-grid">
+        <section class="panel claim-workspace">
+          <form id="hypothesis-form">
+            <label for="hypothesis-input">待验证命题</label>
+            <textarea id="hypothesis-input" maxlength="2000" placeholder="例如：深度学习是机器学习的一种" required></textarea>
+            <div class="claim-actions">
+              <span>主体 · 关系 · 客体</span>
+              <button class="button secondary" type="button" id="path-btn">生成研究路径</button>
+              <button class="button primary" type="submit">分析命题 <span>→</span></button>
+            </div>
+          </form>
+          <div id="hypothesis-result" class="hidden"></div>
+          <div id="paths-result" class="hidden"></div>
+        </section>
+        <aside class="panel history-panel">
+          <div class="panel-title"><div><p class="eyebrow">RECENT CLAIMS</p><h3>分析记录</h3></div><span id="history-count">0</span></div>
+          <div id="hypothesis-history" class="history-list"><div class="loading">正在加载…</div></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="app-view" id="view-papers" data-view-panel="papers" hidden>
+      <div class="view-heading">
+        <div><p class="eyebrow">LITERATURE LAYER</p><h2>论文证据</h2></div>
+        <div class="heading-actions"><button class="button secondary" id="arxiv-btn">搜索 arXiv</button><button class="button primary" id="bibtex-btn">导入 BibTeX <span>＋</span></button></div>
+      </div>
+      <section class="panel literature-panel">
+        <div class="literature-toolbar">
+          <label class="search-field"><span>⌕</span><input id="paper-search-input" type="search" placeholder="搜索论文标题、作者或摘要"></label>
+          <div class="segmented" id="paper-search-mode" aria-label="论文搜索范围">
+            <button class="active" data-mode="metadata" aria-pressed="true">论文</button>
+            <button data-mode="fulltext" aria-pressed="false">全文</button>
+          </div>
+        </div>
+        <div class="list-summary"><span id="paper-result-count">正在加载</span><span id="paper-mode-description">按年份排序</span></div>
+        <div id="paper-list" class="paper-list"><div class="loading">正在加载论文…</div></div>
+      </section>
     </section>
   </main>
 
   <dialog id="concept-dialog">
     <form method="dialog" id="concept-form">
-      <div class="dialog-head"><div><p class="eyebrow">ADD TO ATLAS</p><h2>添加一个新概念</h2></div><button class="icon-btn" value="cancel">×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">KNOWLEDGE NODE</p><h2 id="concept-dialog-title">添加概念</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div>
       <label>概念名称<input name="name" required maxlength="100" placeholder="例如：合成生物学"></label>
-      <label>一句话描述<textarea name="description" required maxlength="5000" placeholder="这个概念是什么？它为什么重要？"></textarea></label>
-      <div class="form-row"><label>领域<input name="category" placeholder="例如：生物学"></label><label>标签<input name="tags" placeholder="AI, 未来, 科学"></label></div>
-      <label>来源（可选）<input name="source" placeholder="书籍、论文或链接"></label>
-      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" value="default" type="submit">保存概念</button></div>
+      <label>定义<textarea name="description" required maxlength="5000" placeholder="准确描述概念的含义和边界"></textarea></label>
+      <div class="form-row"><label>领域<input name="category" maxlength="50" placeholder="例如：生物学"></label><label>标签<input name="tags" placeholder="工程, 生命, 系统"></label></div>
+      <label>来源<input name="source" maxlength="500" placeholder="书籍、论文或来源说明"></label>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" value="default" type="submit">保存概念</button></div>
     </form>
   </dialog>
+
+  <dialog id="relation-dialog">
+    <form method="dialog" id="relation-form">
+      <div class="dialog-head"><div><p class="eyebrow">GRAPH EDGE</p><h2>添加关系</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div>
+      <label>从 <strong id="relation-source-name"></strong> 指向<select name="target_id" required></select></label>
+      <label>关系类型<select name="relation_type" required></select></label>
+      <label>关系依据<textarea name="evidence" maxlength="2000" placeholder="说明这条关系为什么成立"></textarea></label>
+      <label class="range-label">关系确信度 <output id="confidence-output">0.70</output><input name="confidence" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" value="default" type="submit">保存关系</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="evidence-dialog">
+    <form method="dialog" id="evidence-form">
+      <div class="dialog-head"><div><p class="eyebrow">SOURCE RECORD</p><h2>添加来源证据</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div>
+      <label>证据内容<textarea name="content" required maxlength="5000" placeholder="记录可核查的事实、观察或引用"></textarea></label>
+      <label>来源标题<input name="source_title" maxlength="300" placeholder="论文、书籍或资料名称"></label>
+      <label>来源链接<input name="source_url" type="url" maxlength="1000" placeholder="https://"></label>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" value="default" type="submit">保存证据</button></div>
+    </form>
+  </dialog>
+
   <dialog id="bibtex-dialog">
     <form method="dialog" id="bibtex-form">
-      <div class="dialog-head"><div><p class="eyebrow">IMPORT BIBTEX</p><h2>导入论文引用</h2></div><button class="icon-btn" value="cancel">×</button></div>
-      <label>BibTeX 内容<textarea name="bibtex" required placeholder="@article{...}"></textarea></label>
-      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" value="default" type="submit">导入</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">IMPORT BIBTEX</p><h2>导入论文引用</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div>
+      <label>BibTeX 内容<textarea name="bibtex" required class="code-input" placeholder="@article{...}"></textarea></label>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" value="default" type="submit">导入论文</button></div>
     </form>
   </dialog>
+
   <dialog id="arxiv-dialog">
     <form method="dialog" id="arxiv-form">
-      <div class="dialog-head"><div><p class="eyebrow">SEARCH ARXIV</p><h2>搜索 arXiv 论文</h2></div><button class="icon-btn" value="cancel">×</button></div>
-      <label>关键词<input name="query" required placeholder="例如：machine learning"></label>
+      <div class="dialog-head"><div><p class="eyebrow">SEARCH ARXIV</p><h2>搜索 arXiv</h2></div><button class="icon-button" value="cancel" aria-label="关闭">×</button></div>
+      <label>关键词<input name="query" required placeholder="例如：graph neural networks"></label>
       <div id="arxiv-preview" class="arxiv-preview hidden"></div>
-      <div class="dialog-actions"><button class="ghost-btn" value="cancel">取消</button><button class="primary-btn" type="submit">搜索</button></div>
+      <div class="dialog-actions"><button class="button secondary" value="cancel">取消</button><button class="button primary" type="submit">搜索</button></div>
     </form>
   </dialog>
-  <div id="toast" class="toast"></div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>

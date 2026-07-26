@@ -10,16 +10,21 @@ def chunk_paper(paper_id, text, chunk_size=500, overlap=50):
     """Split text into overlapping chunks and store them."""
     if not text:
         return 0
-    words = _tokenize(text)
+    if chunk_size <= 0 or overlap < 0 or overlap >= chunk_size:
+        raise ValueError("分块大小必须大于重叠长度")
+    text = " ".join(str(text).split())
+    if not text:
+        return 0
+    with connection() as conn:
+        conn.execute("DELETE FROM paper_chunks WHERE paper_id = ?", (paper_id,))
     count = 0
-    i = 0
-    while i < len(words):
-        chunk = " ".join(words[i:i + chunk_size])
+    step = chunk_size - overlap
+    for start in range(0, len(text), step):
+        chunk = text[start:start + chunk_size]
         if chunk.strip():
             add_chunk(paper_id, count, chunk)
             count += 1
-        i += chunk_size - overlap
-        if i >= len(words):
+        if start + chunk_size >= len(text):
             break
     return count
 
