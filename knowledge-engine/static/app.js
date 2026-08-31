@@ -117,6 +117,27 @@ function renderCategoryFilters() {
   row.innerHTML = categories.map((item) => `<button class="filter ${state.activeCategory === item.category ? 'active' : ''}" data-category="${escapeHTML(item.category)}">${escapeHTML(item.label)}</button>`).join('');
 }
 
+function renderStrategyResult(data) {
+  const options = (data.options || []).map((item) => `<article class="strategy-option"><strong>${escapeHTML(item.name || '未命名方案')}</strong><span>${escapeHTML(item.fit || '')}</span><p>${escapeHTML(item.advantages || '')}</p><small>取舍：${escapeHTML(item.tradeoffs || '未说明')} · 证据：${escapeHTML(item.evidence_level || '待核验')}</small></article>`).join('');
+  const list = (title, items) => items && items.length ? `<section class="strategy-section"><h4>${title}</h4><ul>${items.map((item) => `<li>${escapeHTML(item)}</li>`).join('')}</ul></section>` : '';
+  $('#strategy-result').innerHTML = `<header class="brief-header"><div><p class="eyebrow">STRATEGY BRIEF</p><h2>${escapeHTML(data.decision || '技术战略分析')}</h2></div><span class="brief-status supports">已生成</span></header><p class="strategy-summary">${escapeHTML(data.executive_summary || '')}</p><section class="strategy-section"><h4>备选路线</h4><div class="strategy-options">${options || '<p>暂无结构化方案</p>'}</div></section>${list('证据缺口', data.evidence_gaps)}${list('风险', data.risks)}${list('持续跟踪信号', data.signals)}${list('下一步行动', data.next_actions)}<small class="strategy-run">运行记录：${escapeHTML(data.run_id || '')}</small>`;
+}
+
+async function generateStrategy(event) {
+  if (event) event.preventDefault();
+  const input = $('#strategy-input');
+  const button = $('#strategy-form button[type="submit"]');
+  const question = input.value.trim();
+  if (!question) return;
+  button.disabled = true;
+  $('#strategy-result').innerHTML = '<div class="loading">正在分析技术路线与证据边界…</div>';
+  try {
+    renderStrategyResult(await api('/api/strategy/analyze', { method: 'POST', body: JSON.stringify({ question }) }));
+  } catch (error) {
+    $('#strategy-result').innerHTML = `<div class="no-results"><strong>战略分析失败</strong><span>${escapeHTML(error.message)}</span></div>`;
+  } finally { button.disabled = false; }
+}
+
 function renderConceptList(items, total) {
   const list = $('#concept-list');
   $('#concept-result-count').textContent = `${total} 个概念`;
@@ -660,9 +681,10 @@ async function refreshAll() {
 function setup() {
   $('.brand').addEventListener('click', (event) => { event.preventDefault(); switchView('research'); });
   document.querySelectorAll('.view-tab').forEach((button) => button.addEventListener('click', () => switchView(button.dataset.view)));
-  const initialView = ['research', 'explore', 'issues', 'hypothesis', 'papers'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'research';
+  const initialView = ['research', 'explore', 'issues', 'hypothesis', 'papers', 'strategy'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'research';
   switchView(initialView);
   $('#brief-form').addEventListener('submit', generateBrief);
+  $('#strategy-form').addEventListener('submit', generateStrategy);
   $('#brief-suggestions').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-question]');
     if (!button) return;

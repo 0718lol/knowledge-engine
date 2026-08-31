@@ -106,7 +106,22 @@ POST /api/papers/import-bibtex
 POST /api/papers/import-doi
 GET  /api/arxiv/search?q=
 POST /api/arxiv/import
+POST /api/strategy/analyze
+GET  /api/strategy/runs
 ```
+
+## 技术战略 Agent
+
+战略视图面向技术战略人员，将本地概念、论文和议题作为上下文，调用 DeepSeek Flash 生成路线比较、证据缺口、风险、跟踪信号和下一步行动。默认使用 `deepseek-v4-flash` 的非思考模式（`thinking.type=disabled`）。
+
+启动前在当前终端设置密钥，密钥不会写入项目或 SQLite：
+
+```bash
+export DEEPSEEK_API_KEY='your-key'
+python3 server.py --port 8080
+```
+
+也可以用 `DEEPSEEK_MODEL` 和 `DEEPSEEK_BASE_URL` 覆盖默认模型和接口地址。Agent 的每次运行只保存问题、检索上下文、结构化结果、模型名和时间，不保存密钥。
 
 列表接口返回统一的 `items`、`total`、`limit` 和 `offset`（适用时）。写接口区分参数错误、数据冲突和服务器错误；URL 字段只接受 `http` 或 `https`。
 

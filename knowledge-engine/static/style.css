@@ -72,6 +72,25 @@ a { color: var(--blue); }
 .button.secondary:hover { color: var(--ink); border-color: var(--line-strong); background: var(--panel-subtle); }
 .text-button { padding: 3px 0; border: 0; background: transparent; color: var(--blue); font-size: 10px; }
 .method-badge { padding: 6px 9px; border: 1px solid #d6deef; border-radius: 4px; color: #4b6298; background: #f2f5fb; font-size: 10px; }
+.strategy-workspace { display: grid; grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr); gap: 14px; }
+.strategy-workspace > * { min-width: 0; }
+.strategy-workspace .brief-form, .strategy-workspace .brief-result { padding: 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.strategy-workspace .brief-form > div { display: flex; flex-direction: column; gap: 10px; }
+.strategy-workspace textarea { min-height: 160px; }
+.form-hint, .strategy-run { color: var(--muted); font-size: 10px; }
+.strategy-summary { margin: 0 0 18px; color: var(--ink); font-size: 13px; line-height: 1.7; }
+.strategy-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.strategy-section h4 { margin: 0 0 9px; font-size: 11px; }
+.strategy-section ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 11px; }
+.strategy-section li + li { margin-top: 6px; }
+.strategy-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.strategy-option { padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-subtle); }
+.strategy-option strong, .strategy-option span, .strategy-option small { display: block; }
+.strategy-option strong { font-size: 12px; }
+.strategy-option span { margin-top: 3px; color: var(--blue); font-size: 10px; }
+.strategy-option p { margin: 8px 0; color: var(--muted); font-size: 10px; }
+.strategy-option small { color: var(--soft); font-size: 9px; }
+@media (max-width: 820px) { .strategy-workspace { grid-template-columns: 1fr; } }
 
 .panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .explorer-grid { min-height: 680px; height: calc(100vh - 294px); display: grid; grid-template-columns: 330px minmax(0, 1fr); overflow: hidden; }

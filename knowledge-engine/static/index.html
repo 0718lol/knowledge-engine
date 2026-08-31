@@ -19,6 +19,7 @@
       <button class="view-tab" data-view="issues" aria-selected="false">议题</button>
       <button class="view-tab" data-view="hypothesis" aria-selected="false">验证</button>
       <button class="view-tab" data-view="papers" aria-selected="false">文献</button>
+      <button class="view-tab" data-view="strategy" aria-selected="false">战略</button>
     </nav>
     <div class="connection" id="connection-status"><i></i><span>正在连接</span></div>
     <button class="icon-button" id="refresh-btn" title="刷新数据" aria-label="刷新数据">↻</button>
@@ -32,6 +33,21 @@
         <p class="hero-text">探索概念之间尚未被看见的关系。把碎片化的信息，变成可验证、可连接、可共同编辑的知识网络。</p>
       </div>
       <div class="hero-orbit" aria-hidden="true"><span class="orbit-core">∞</span><i></i><i></i><i></i></div>
+    </section>
+
+    <section class="app-view" id="view-strategy" data-view-panel="strategy" hidden>
+      <div class="view-heading">
+        <div><p class="eyebrow">TECH STRATEGY AGENT</p><h2>技术战略决策</h2></div>
+        <span class="method-badge">DeepSeek Flash · 非思考模式</span>
+      </div>
+      <section class="strategy-workspace">
+        <form id="strategy-form" class="brief-form">
+          <label for="strategy-input">你正在做什么技术决策？</label>
+          <div><textarea id="strategy-input" maxlength="2000" required placeholder="例如：我们是否应该在未来 12 个月自研大模型平台？"></textarea><button class="button primary" type="submit">生成战略分析 <span>→</span></button></div>
+          <p class="form-hint">Agent 会结合本地知识库输出路线比较、证据缺口、风险和下一步行动。</p>
+        </form>
+        <div id="strategy-result" class="brief-result"><div class="empty-state"><h3>输入一个技术决策问题</h3><p>结果会保留证据边界，不把推测当成事实。</p></div></div>
+      </section>
     </section>
 
     <section class="overview stats-grid" aria-label="知识库概览">
