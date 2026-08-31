@@ -10,12 +10,16 @@ import paths
 import reasoning
 import issues
 import briefs
+from arxiv import ARXIV_SEARCH_URL
 from server import clean_string_list, clean_url, int_query
 
 from tests.support import DatabaseTestCase
 
 
 class DataContractTests(DatabaseTestCase):
+    def test_external_paper_search_uses_tls(self):
+        self.assertTrue(ARXIV_SEARCH_URL.startswith("https://"))
+
     def test_self_relation_is_rejected(self):
         concept = knowledge.create_concept("概念", "描述")
         with self.assertRaises(ValueError):

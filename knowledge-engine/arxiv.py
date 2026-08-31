@@ -4,7 +4,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import re
 
-ARXIV_SEARCH_URL = "http://export.arxiv.org/api/query"
+ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query"
 ARXIV_NS = {
     "atom": "http://www.w3.org/2005/Atom",
     "arxiv": "http://arxiv.org/schemas/atom",
