@@ -19,6 +19,8 @@ import paths
 import fulltext
 import issues
 import briefs
+import strategy
+import strategy_agent
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -110,6 +112,8 @@ def error_status(exc):
         return 400
     if isinstance(exc, sqlite3.IntegrityError):
         return 409
+    if isinstance(exc, strategy_agent.StrategyAgentError):
+        return 502
     return 500
 
 
@@ -198,6 +202,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"items": knowledge.list_evidence(cid)})
             if path == "/api/hypotheses":
                 return self.send_json({"items": knowledge.list_hypotheses()})
+            if path == "/api/strategy/runs":
+                return self.send_json({"items": strategy.list_runs()})
             if path == "/api/issues":
                 return self.send_json({"items": issues.list_issues()})
             if path.startswith("/api/issues/"):
@@ -270,6 +276,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/brief":
                 question = clean_text(data.get("question"), "研究问题", max_length=2000)
                 return self.send_json(briefs.build(question), 201)
+            if path == "/api/strategy/analyze":
+                question = clean_text(data.get("question"), "技术决策问题", max_length=2000)
+                return self.send_json(strategy.analyze(question), 201)
             if path == "/api/concepts":
                 name = clean_text(data.get("name"), "概念名称", max_length=100)
                 description = clean_text(data.get("description"), "概念描述", max_length=5000)

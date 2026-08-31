@@ -9,7 +9,7 @@ import uuid
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "knowledge.db"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def now_iso():
@@ -193,6 +193,17 @@ def init_db():
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS agent_runs (
+                id TEXT PRIMARY KEY,
+                agent_type TEXT NOT NULL,
+                question TEXT NOT NULL,
+                context TEXT NOT NULL DEFAULT '{}',
+                result TEXT NOT NULL DEFAULT '{}',
+                model TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_runs_created
+                ON agent_runs(created_at);
             """
         )
         _run_migrations(conn)
@@ -301,6 +312,24 @@ def _run_migrations(conn):
             """
         )
         version = 5
+
+    if version < 6:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS agent_runs (
+                id TEXT PRIMARY KEY,
+                agent_type TEXT NOT NULL,
+                question TEXT NOT NULL,
+                context TEXT NOT NULL DEFAULT '{}',
+                result TEXT NOT NULL DEFAULT '{}',
+                model TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_runs_created
+                ON agent_runs(created_at);
+            """
+        )
+        version = 6
 
     conn.execute(
         """INSERT INTO schema_meta(key, value) VALUES ('schema_version', ?)
