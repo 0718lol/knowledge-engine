@@ -40,25 +40,43 @@ def _tokenize(text):
     return tokens
 
 
+def _chunk_signature():
+    """Cheap DB signature for cache invalidation: chunks are only ever
+    deleted and re-inserted, so rowid bounds/count change on every write."""
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(MIN(rowid), 0) AS lo, COALESCE(MAX(rowid), 0) AS hi FROM paper_chunks"
+        ).fetchone()
+    return (row["c"], row["lo"], row["hi"])
+
+
+_index_cache = {"signature": None, "index": {}, "doc_terms": {}}
+
+
 def build_index():
-    """Build TF-IDF index over all paper chunks."""
+    """Build (or reuse cached) TF-IDF index over all paper chunks."""
+    signature = _chunk_signature()
+    if _index_cache["signature"] == signature:
+        return _index_cache["index"], _index_cache["doc_terms"]
+
     with connection() as conn:
         rows = conn.execute("SELECT id, content FROM paper_chunks").fetchall()
 
     doc_count = len(rows)
     if doc_count == 0:
-        return {}, 0
+        index, doc_terms = {}, {}
+    else:
+        index = {}
+        doc_terms = {}
+        for row in rows:
+            doc_id = row["id"]
+            terms = _tokenize(row["content"])
+            doc_terms[doc_id] = terms
+            tf = Counter(terms)
+            for term, count in tf.items():
+                index.setdefault(term, set()).add(doc_id)
 
-    index = {}
-    doc_terms = {}
-    for row in rows:
-        doc_id = row["id"]
-        terms = _tokenize(row["content"])
-        doc_terms[doc_id] = terms
-        tf = Counter(terms)
-        for term, count in tf.items():
-            index.setdefault(term, set()).add(doc_id)
-
+    _index_cache.update(signature=signature, index=index, doc_terms=doc_terms)
     return index, doc_terms
 
 
@@ -93,17 +111,23 @@ def search(query, top_k=20):
 
     ranked = sorted(scores.items(), key=lambda x: -x[1])[:top_k]
 
+    if not ranked:
+        return []
+    score_map = dict(ranked)
+    placeholders = ",".join("?" for _ in ranked)
     with connection() as conn:
-        results = []
-        for doc_id, score in ranked:
-            row = conn.execute(
-                """SELECT pc.*, p.title AS paper_title, p.authors AS paper_authors
-                   FROM paper_chunks pc JOIN papers p ON p.id = pc.paper_id
-                   WHERE pc.id = ?""",
-                (doc_id,)
-            ).fetchone()
-            if row:
-                item = dict(row)
-                item["score"] = round(score, 4)
-                results.append(item)
+        rows = conn.execute(
+            f"""SELECT pc.*, p.title AS paper_title, p.authors AS paper_authors
+                FROM paper_chunks pc JOIN papers p ON p.id = pc.paper_id
+                WHERE pc.id IN ({placeholders})""",
+            [doc_id for doc_id, _ in ranked],
+        ).fetchall()
+    row_map = {row["id"]: row for row in rows}
+    results = []
+    for doc_id, _ in ranked:
+        row = row_map.get(doc_id)
+        if row:
+            item = dict(row)
+            item["score"] = round(score_map[doc_id], 4)
+            results.append(item)
     return results

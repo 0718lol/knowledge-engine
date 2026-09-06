@@ -1,0 +1,6 @@
+[project]
+name = "knowledge-engine"
+version = "0.1.0"
+description = "Atlas 知识与科学发现工作台:概念/关系/证据/论文知识网络(零第三方依赖)"
+requires-python = ">=3.11"
+dependencies = []

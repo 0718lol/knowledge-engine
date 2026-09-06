@@ -1,6 +1,7 @@
 """Concept, relation, and evidence CRUD operations."""
 from database import connection, row_dict, rows_dict, new_id, now_iso
 import json
+import search
 
 
 RELATION_TYPES = ("causes", "contradicts", "supports", "is_a", "part_of", "example", "related_to", "depends_on")
@@ -89,6 +90,7 @@ def create_concept(name, description, category="未分类", tags=None, source=""
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (cid, name, description, category, json.dumps(tags or []), source, now, now)
         )
+    search.invalidate_cache()
     return get_concept(cid)
 
 
@@ -104,12 +106,14 @@ def update_concept(concept_id, **kwargs):
     vals = list(updates.values()) + [concept_id]
     with connection() as conn:
         conn.execute(f"UPDATE concepts SET {cols} WHERE id = ?", vals)
+    search.invalidate_cache()
     return get_concept(concept_id)
 
 
 def delete_concept(concept_id):
     with connection() as conn:
         conn.execute("DELETE FROM concepts WHERE id = ?", (concept_id,))
+    search.invalidate_cache()
 
 
 # ─── Relations ──────────────────────────────────────────────────────────────────

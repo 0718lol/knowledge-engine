@@ -187,9 +187,7 @@ class Handler(BaseHTTPRequestHandler):
                 limit = int_query(query, "limit", 50, 1, 100)
                 offset = int_query(query, "offset", 0, 0, 1_000_000)
                 if q:
-                    matches = search.search(q, top_k=1_000_000, category=category or None)
-                    total = len(matches)
-                    results = matches[offset:offset + limit]
+                    results, total = search.search_page(q, limit, offset, category=category or None)
                 else:
                     results = knowledge.list_concepts(category=category or None, limit=limit, offset=offset)
                     total = knowledge.count_concepts(category=category or None)

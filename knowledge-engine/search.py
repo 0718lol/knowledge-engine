@@ -4,6 +4,17 @@ import re
 from collections import Counter
 from database import connection
 
+# Cached TF-IDF index. Rebuilding tokenizes every concept, which is far too
+# expensive to repeat per request, so the index is reused until a concept
+# write invalidates it (see invalidate_cache, called from knowledge.py).
+_CACHE_EMPTY = object()  # sentinel distinct from any real category key
+_index_cache = {"category": _CACHE_EMPTY, "index": {}, "doc_terms": {}, "doc_count": 0}
+
+
+def invalidate_cache():
+    """Drop the cached index so the next search rebuilds it."""
+    _index_cache["category"] = _CACHE_EMPTY
+
 
 def _tokenize(text):
     """Tokenize Latin words and overlapping Chinese bigrams for stdlib search."""
@@ -16,7 +27,10 @@ def _tokenize(text):
 
 
 def _build_index(category=None):
-    """Build a term → {doc_id → tf} map from all concepts."""
+    """Build (or return cached) term → {doc_id → tf} map from all concepts."""
+    if _index_cache["category"] == category:
+        return _index_cache["index"], _index_cache["doc_terms"], _index_cache["doc_count"]
+
     with connection() as conn:
         if category:
             rows = conn.execute(
@@ -28,24 +42,25 @@ def _build_index(category=None):
 
     doc_count = len(rows)
     if doc_count == 0:
-        return {}, [], 0
+        index, doc_terms = {}, {}
+    else:
+        index = {}          # term → {doc_id: tf}
+        doc_terms = {}      # doc_id → [terms]
+        for row in rows:
+            doc_id = row["id"]
+            text = f"{row['name']} {row['description']} {row['category']} {row['tags']}"
+            terms = _tokenize(text)
+            doc_terms[doc_id] = terms
+            tf = Counter(terms)
+            for term, count in tf.items():
+                index.setdefault(term, {})[doc_id] = count
 
-    index = {}          # term → {doc_id: tf}
-    doc_terms = {}      # doc_id → [terms]
-    for row in rows:
-        doc_id = row["id"]
-        text = f"{row['name']} {row['description']} {row['category']} {row['tags']}"
-        terms = _tokenize(text)
-        doc_terms[doc_id] = terms
-        tf = Counter(terms)
-        for term, count in tf.items():
-            index.setdefault(term, {})[doc_id] = count
-
+    _index_cache.update(category=category, index=index, doc_terms=doc_terms, doc_count=doc_count)
     return index, doc_terms, doc_count
 
 
-def search(query, top_k=20, category=None):
-    """Return list of {id, name, description, category, score} sorted by TF-IDF relevance."""
+def _score_all(query, category=None):
+    """Return the full ranked [(doc_id, score)] list for a query."""
     index, doc_terms, doc_count = _build_index(category)
     if doc_count == 0:
         return []
@@ -74,9 +89,11 @@ def search(query, top_k=20, category=None):
         if score > 0:
             scores[doc_id] = score
 
-    # Get top-k
-    ranked = sorted(scores.items(), key=lambda x: -x[1])[:top_k]
+    return sorted(scores.items(), key=lambda x: -x[1])
 
+
+def _fetch_items(ranked):
+    """Fetch concept rows for ranked doc_ids, keeping relevance order."""
     if not ranked:
         return []
     score_map = dict(ranked)
@@ -95,3 +112,16 @@ def search(query, top_k=20, category=None):
             item["score"] = round(score_map[doc_id], 4)
             results.append(item)
     return results
+
+
+def search(query, top_k=20, category=None):
+    """Return list of {id, name, description, category, score} sorted by TF-IDF relevance."""
+    ranked = _score_all(query, category)[:top_k]
+    return _fetch_items(ranked)
+
+
+def search_page(query, limit, offset, category=None):
+    """Return (items, total) for one page of matches, ordered by relevance."""
+    ranked = _score_all(query, category)
+    total = len(ranked)
+    return _fetch_items(ranked[offset:offset + limit]), total
